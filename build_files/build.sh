@@ -21,18 +21,6 @@ dnf5 install -y \
     wget \
     wireguard-tools
 
-mkdir -p /etc/modprobe.d
-
-cat > /etc/modprobe.d/blacklist-nouveau.conf <<'EOF'
-blacklist nouveau
-options nouveau modeset=0
-EOF
-
-cat > /etc/modprobe.d/nvidia.conf <<'EOF'
-options nvidia-drm modeset=1
-options nvidia NVreg_OpenRmEnableUnsupportedGpus=1
-EOF
-
 mkdir -p /usr/libexec/emryk
 
 cat > /usr/libexec/emryk/install-flatpaks.sh <<'EOF'
