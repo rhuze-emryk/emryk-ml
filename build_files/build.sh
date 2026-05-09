@@ -2,6 +2,11 @@
 
 set -ouex pipefail
 
+# nouveau must not claim the GPU before the NVIDIA driver; ublue-os-nvidia-addons
+# does not ship this blacklist, so we create it explicitly.
+echo -e "blacklist nouveau\noptions nouveau modeset=0" \
+    > /usr/lib/modprobe.d/blacklist-nouveau.conf
+
 curl -fsSL https://pkgs.tailscale.com/stable/fedora/tailscale.repo \
     -o /etc/yum.repos.d/tailscale.repo
 
