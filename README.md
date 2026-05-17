@@ -42,6 +42,15 @@ sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml:latest
 
 Reboot to apply.
 
+### Variants
+
+| Tag | Description |
+|---|---|
+| `:latest` | Default image. |
+| `:latest-antigravity` | `:latest` plus [Google Antigravity](https://antigravity.google/) IDE preinstalled. Built manually on demand. |
+
+Switch between variants with `bootc switch`; rollback to the previous deployment with `sudo bootc rollback`. `/var` and `/home` are preserved across switches.
+
 ## Verifying the image
 
 Images are signed with [cosign](https://github.com/sigstore/cosign). The public key is `cosign.pub` in this repository.
@@ -59,6 +68,8 @@ cosign verify \
 | `latest` | Current tested release |
 | `YYYYMMDD` | Date-stamped build |
 | `latest.YYYYMMDD` | Same build, aliased |
+| `latest-antigravity` | `latest` + Google Antigravity IDE (manual dispatch) |
+| `latest-antigravity.YYYYMMDD` | Date-stamped antigravity build |
 
 PRs produce a SHA-tagged image that is not pushed to the registry.
 
@@ -79,12 +90,15 @@ just build-qcow2
 ## Repository layout
 
 ```
-Containerfile          Multi-stage build: akmods-nvidia-open → kinoite-main
-build_files/build.sh   Package installs, repo setup, service config
+Containerfile                       Multi-stage build: akmods-nvidia-open → kinoite-main
+Containerfile.antigravity           Antigravity variant: FROM :latest + install layer
+build_files/build.sh                Package installs, repo setup, service config
+build_files/antigravity-install.sh  Antigravity repo + package install
 .github/workflows/
-  build.yml            Build, push to GHCR, sign with cosign
-  build-disk.yml       Disk image builds (qcow2, raw, iso)
-cosign.pub             Public signing key
+  build.yml                         Build, push to GHCR, sign with cosign
+  build-antigravity.yml             Manual dispatch: build :latest-antigravity
+  build-disk.yml                    Disk image builds (qcow2, raw, iso)
+cosign.pub                          Public signing key
 ```
 
 ## What this image is not
