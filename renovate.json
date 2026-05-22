@@ -31,8 +31,8 @@
     {
       "customType": "regex",
       "description": "Track GRYPE_VERSION env var against anchore/grype GitHub releases (SECURITY-TODO #3).",
-      "fileMatch": [
-        "^\\.github/workflows/.+\\.ya?ml$"
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
       ],
       "matchStrings": [
         "GRYPE_VERSION:\\s*[\"']?(?<currentValue>v[^\"'\\s]+)[\"']?"
@@ -43,8 +43,8 @@
     {
       "customType": "regex",
       "description": "Track SYFT_VERSION env var against anchore/syft GitHub releases (SECURITY-TODO #8).",
-      "fileMatch": [
-        "^\\.github/workflows/.+\\.ya?ml$"
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
       ],
       "matchStrings": [
         "SYFT_VERSION:\\s*[\"']?(?<currentValue>v[^\"'\\s]+)[\"']?"
