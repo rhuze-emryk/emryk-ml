@@ -209,6 +209,9 @@ build_files/private-ml-install.sh   Mullvad + NVIDIA container toolkit + Unsloth
   build-private-ml.yml              Manual dispatch: build :latest-private-ml
   build-disk.yml                    Disk image builds (qcow2, raw, iso)
 cosign.pub                          Public signing key
+renovate.json                       Renovate config: keeps action SHAs, base-image digests, and tool versions current
+SECURITY.md / SECURITY-TODO.md      Public security policy / private hardening backlog
+KEY-POLICY.md                       Signing-key lifecycle (rotation, access, incident response)
 ```
 
 ## What this image is not

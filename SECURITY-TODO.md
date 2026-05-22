@@ -147,11 +147,25 @@ new ones when threat-model assumptions change.
   Follow-up the maintainer must do outside this commit: set up
   `security@emryk.com` as an alias to the real mailbox.
 
-- [ ] **14. Wire renovate** properly. Workflow comments reference it but
-  it isn't configured. This is the long-term answer to item #10 —
-  Renovate's `pinDigests` mode will keep every action SHA current and
-  open PRs as new versions ship, so the audit is continuous rather than
-  point-in-time. Also covers base-image digest bumps (item #1).
+- [x] **14. Wire Renovate.** _(2026-05-22)_
+  Shipped `renovate.json` at repo root configuring Mend Renovate Bot
+  (the OSS-free GitHub App):
+  - `pinDigests: true` for GitHub Actions (continuous answer to #10)
+    and Docker base images (continuous answer to #1).
+  - Custom managers track `GRYPE_VERSION` (#3) and `SYFT_VERSION` (#8)
+    env vars against anchore/grype and anchore/syft GitHub releases.
+  - Weekly Monday-morning schedule (America/New_York) to batch updates.
+  - No auto-merge — every PR reviewed (matches [[project-hardening-philosophy]]:
+    closed by default + explicit opt-in).
+
+  Activation is a one-time UI step the maintainer must do:
+  1. Visit https://github.com/apps/renovate
+  2. Install on `rhuze-emryk/emryk-ml`
+  3. The first PR Renovate opens will be a "Configure Renovate" onboarding
+     PR that validates our `renovate.json`. Merge it.
+
+  Until the install is done, `renovate.json` is inert. The config itself
+  is committed and reviewed, which is the part this item was tracking.
 
 - [ ] **15. SELinux audit.** Confirm enforcing, document any booleans
   required by NVIDIA-CDI / podman / ML workloads.
@@ -193,3 +207,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — annual signing-key rotation scheduled as remote routine `trig_018BR9ZVeAzvocpPtPQQn4kR`, fires 2027-05-22T13:00:00Z (09:00 ET). Will open a tracking issue and hand off to maintainer; performs no cryptographic action.
 - 2026-05-22 — item 13 done: `SECURITY.md` shipped (threat model, SLAs, disclosure policy); GitHub Private Vulnerability Reporting enabled on the repo via `gh api`.
 - 2026-05-22 — item 8 done: SLSA build provenance + CycloneDX SBOM attestations added to both publish workflows; pushed to GHCR as OCI referrers. Three independent trust signals per image now.
+- 2026-05-22 — item 14 done: `renovate.json` shipped (action SHA + base-image digest pinning, custom managers for GRYPE_VERSION/SYFT_VERSION, weekly schedule, no auto-merge). Maintainer must install the Renovate GitHub App at github.com/apps/renovate for the config to activate.

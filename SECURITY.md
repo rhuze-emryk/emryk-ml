@@ -26,7 +26,7 @@ The `bootc-fetch-apply-updates.timer` enabled in the image fetches updates rough
 | Local privilege escalation via container API | Rootful `podman.socket` is disabled; rootless per-user socket enabled by default — scoped to the user's own privileges, with no path to root | `build_files/build.sh` |
 | Unattended reboots killing long-running workloads | Auto-update timer fetches and stages updates only; never reboots automatically | `bootc-fetch-apply-updates.service.d/10-emryk.conf` |
 | CVEs in installed packages | Every CI build runs a Grype scan against the just-built image; results posted to the workflow job summary | `.github/workflows/build.yml`, `build-private-ml.yml` |
-| CI supply-chain compromise (moving-tag GitHub Actions, untrusted dependencies pulled at build time) | Every action is SHA-pinned; `tailscale.repo` is vendored | `.github/workflows/*.yml`, `build_files/tailscale.repo` |
+| CI supply-chain compromise (moving-tag GitHub Actions, untrusted dependencies pulled at build time) | Every action and base image is SHA/digest-pinned; `tailscale.repo` is vendored; Renovate opens PRs to keep pins current so the audit is continuous, not point-in-time | `.github/workflows/*.yml`, `build_files/tailscale.repo`, `renovate.json` |
 | Signing-key compromise | Annual scheduled rotation + on-incident rotation, with a graceful transition window | [KEY-POLICY.md](./KEY-POLICY.md) |
 
 ## Threat model — what this image does NOT protect against

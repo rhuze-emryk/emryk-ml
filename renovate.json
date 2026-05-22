@@ -1,0 +1,56 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "schedule": [
+    "before 7am on Monday"
+  ],
+  "timezone": "America/New_York",
+  "labels": [
+    "dependencies"
+  ],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "description": "Pin every GitHub Action by SHA (SECURITY-TODO #10).",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "Pin every container base image by digest (SECURITY-TODO #1).",
+      "matchDatasources": [
+        "docker"
+      ],
+      "pinDigests": true
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track GRYPE_VERSION env var against anchore/grype GitHub releases (SECURITY-TODO #3).",
+      "fileMatch": [
+        "^\\.github/workflows/.+\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "GRYPE_VERSION:\\s*[\"']?(?<currentValue>v[^\"'\\s]+)[\"']?"
+      ],
+      "depNameTemplate": "anchore/grype",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "Track SYFT_VERSION env var against anchore/syft GitHub releases (SECURITY-TODO #8).",
+      "fileMatch": [
+        "^\\.github/workflows/.+\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "SYFT_VERSION:\\s*[\"']?(?<currentValue>v[^\"'\\s]+)[\"']?"
+      ],
+      "depNameTemplate": "anchore/syft",
+      "datasourceTemplate": "github-releases"
+    }
+  ]
+}
