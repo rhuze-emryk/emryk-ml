@@ -22,6 +22,7 @@ env:
   DEFAULT_TAG: "latest"
   # Pinned for reproducibility; bumped by renovate (SECURITY-TODO #14).
   GRYPE_VERSION: "v0.112.0"
+  SYFT_VERSION: "v1.44.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name}}-${{ inputs.stream_name }}
@@ -36,6 +37,8 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      # SECURITY-TODO #8: needed for SLSA provenance + SBOM attestations.
+      attestations: write
 
     steps:
       - name: Prepare environment
@@ -204,3 +207,44 @@ jobs:
           TAGS: ${{ steps.push.outputs.digest }}
           COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+
+      # SECURITY-TODO #8: SLSA build provenance + CycloneDX SBOM.
+      # Provenance: cryptographic statement, signed by Sigstore via this
+      # workflow's OIDC token, declaring that this exact image digest was
+      # built from this repo at this commit, by this workflow. SBOM: the
+      # complete list of packages syft finds in the image. Both ride along
+      # with the image as OCI referrers (`push-to-registry: true`) so a
+      # customer can verify without ever touching the GitHub API.
+      - name: Install syft
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          curl -fsSL "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin syft
+          syft version
+
+      - name: Generate SBOM (CycloneDX)
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          # Reference the just-pushed image by digest so we SBOM exactly
+          # what we published, not a re-resolved tag.
+          syft "${IMAGE_REGISTRY}/${IMAGE_NAME}@${{ steps.push.outputs.digest }}" \
+            -o cyclonedx-json=sbom.cdx.json
+          echo "## SBOM" >> "$GITHUB_STEP_SUMMARY"
+          echo "Generated \`sbom.cdx.json\` ($(wc -c < sbom.cdx.json) bytes) for \`${IMAGE_NAME}@${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest build provenance
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest SBOM
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true

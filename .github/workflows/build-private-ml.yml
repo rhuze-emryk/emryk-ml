@@ -24,6 +24,7 @@ env:
   DEFAULT_TAG: "latest-private-ml"
   # Pinned for reproducibility; bumped by renovate (SECURITY-TODO #14).
   GRYPE_VERSION: "v0.112.0"
+  SYFT_VERSION: "v1.44.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -41,6 +42,8 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      # SECURITY-TODO #8: needed for SLSA provenance + SBOM attestations.
+      attestations: write
 
     steps:
       - name: Prepare environment
@@ -157,3 +160,33 @@ jobs:
           TAGS: ${{ steps.push.outputs.digest }}
           COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+
+      # SECURITY-TODO #8: SLSA build provenance + CycloneDX SBOM.
+      # See the corresponding block in build.yml for the full rationale.
+      - name: Install syft
+        run: |
+          curl -fsSL "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin syft
+          syft version
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          syft "${IMAGE_REGISTRY}/${IMAGE_NAME}@${{ steps.push.outputs.digest }}" \
+            -o cyclonedx-json=sbom.cdx.json
+          echo "## SBOM" >> "$GITHUB_STEP_SUMMARY"
+          echo "Generated \`sbom.cdx.json\` ($(wc -c < sbom.cdx.json) bytes) for \`${IMAGE_NAME}@${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true

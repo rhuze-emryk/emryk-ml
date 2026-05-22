@@ -64,9 +64,20 @@ new ones when threat-model assumptions change.
   never auto-reboot — preserving long-running training jobs. README
   documents the cadence, opt-out, and rollback story.
 
-- [ ] **8. SLSA build provenance + SBOM in CI.**
-  Add `actions/attest-build-provenance` and a CycloneDX/SPDX SBOM step.
-  Commercial customers will ask for both.
+- [x] **8. SLSA build provenance + SBOM in CI.** _(2026-05-22)_
+  Both `build.yml` and `build-private-ml.yml` now generate and attest:
+  - **SLSA build provenance** via `actions/attest-build-provenance@v4.1.0`
+  - **CycloneDX-JSON SBOM** via `syft v1.44.0` + `actions/attest-sbom@v4.1.0`
+
+  Attestations are signed via Sigstore using the workflow's short-lived
+  OIDC token (no long-lived secret) and pushed to the registry as OCI
+  referrers (`push-to-registry: true`), so customers can verify with
+  `gh attestation verify` against the published artifact alone — no
+  GitHub API trust needed beyond the registry. Each image now carries
+  three independent trust signals: cosign signature (item #2), SLSA
+  provenance, and SBOM. README and SECURITY.md document the
+  verification recipes. SPDX format deferred — can add in ~10 min if a
+  customer specifically asks.
 
 - [x] **9. Explicit firewalld zone config.** _(2026-05-22)_
   Default zone switched from inherited `FedoraWorkstation` (which
@@ -181,3 +192,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 12 done: `KEY-POLICY.md` shipped with rotation cadence (annual + on-incident), graceful procedure, incident runbook, GH Environment protection runbook, and keyless-signing roadmap.
 - 2026-05-22 — annual signing-key rotation scheduled as remote routine `trig_018BR9ZVeAzvocpPtPQQn4kR`, fires 2027-05-22T13:00:00Z (09:00 ET). Will open a tracking issue and hand off to maintainer; performs no cryptographic action.
 - 2026-05-22 — item 13 done: `SECURITY.md` shipped (threat model, SLAs, disclosure policy); GitHub Private Vulnerability Reporting enabled on the repo via `gh api`.
+- 2026-05-22 — item 8 done: SLSA build provenance + CycloneDX SBOM attestations added to both publish workflows; pushed to GHCR as OCI referrers. Three independent trust signals per image now.
