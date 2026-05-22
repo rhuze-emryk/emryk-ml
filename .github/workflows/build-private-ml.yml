@@ -2,6 +2,18 @@
 name: Build private-ml variant
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Containerfile.private-ml'
+      - 'build_files/private-ml-install.sh'
+      - '.github/workflows/build-private-ml.yml'
+  # Re-build the variant whenever the base image is re-built so they stay in sync.
+  workflow_run:
+    workflows: ["Build container image"]
+    types: [completed]
+    branches: [main]
 
 env:
   IMAGE_DESC: "Emryk ML with Mullvad VPN daemon and Unsloth Studio preconfigured. Variant of emryk-ml:latest."
@@ -19,6 +31,9 @@ jobs:
   build_push:
     name: Build and push private-ml variant
     runs-on: ubuntu-24.04
+    # When chained off the base build via workflow_run, skip on failed/cancelled
+    # base runs. Other triggers always run.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
 
     permissions:
       contents: read
