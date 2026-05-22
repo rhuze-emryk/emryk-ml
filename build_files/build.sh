@@ -17,6 +17,7 @@ dnf5 install -y \
     distrobox \
     fuse \
     fuse-libs \
+    gh \
     git \
     htop \
     kde-gtk-config \

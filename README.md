@@ -24,6 +24,7 @@ This is the public image foundation for the [Emryk Workstation](https://emryk.co
 | `neovim` / `vim-enhanced` | Editors |
 | `btop` / `htop` | System monitoring |
 | `kde-gtk-config` | GTK app theming integration for KDE |
+| `gh` | GitHub CLI |
 | `git` / `curl` / `wget` | Standard tooling |
 
 **Systemd services enabled:** `tailscaled`, `cockpit.socket`, `podman.socket`
