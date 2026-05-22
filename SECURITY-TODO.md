@@ -123,9 +123,18 @@ new ones when threat-model assumptions change.
 
 ## Low priority — worth doing eventually
 
-- [ ] **13. SECURITY.md documenting the threat model.**
-  What this image protects against, what it doesn't, where customers must
-  layer their own controls. Public-facing.
+- [x] **13. SECURITY.md documenting the threat model.** _(2026-05-22)_
+  Shipped [SECURITY.md](./SECURITY.md) at repo root: supported versions,
+  what the image protects against (with mechanism references), what it
+  deliberately does NOT (where customers layer their own controls),
+  vulnerability reporting via `security@emryk.com` + GitHub Private
+  Vulnerability Reporting (enabled on the repo at this commit), triage
+  SLAs (≤7d critical/high triage, ≤90d fix), and a 90-day coordinated-
+  disclosure window. Cross-links KEY-POLICY.md for the supply-chain
+  story.
+
+  Follow-up the maintainer must do outside this commit: set up
+  `security@emryk.com` as an alias to the real mailbox.
 
 - [ ] **14. Wire renovate** properly. Workflow comments reference it but
   it isn't configured. This is the long-term answer to item #10 —
@@ -170,3 +179,5 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 11 done: rootful `podman.socket` disabled; rootless socket enabled globally per-user. Docker SDK consumers must move to `$DOCKER_HOST` pointing at rootless.
 - 2026-05-22 — item 9 done: default zone → `public`, override drops mdns/cockpit/high-ports; corrects item #4's wrong-assumption status (default was FedoraWorkstation, not public; cockpit was in fact LAN-reachable until this commit).
 - 2026-05-22 — item 12 done: `KEY-POLICY.md` shipped with rotation cadence (annual + on-incident), graceful procedure, incident runbook, GH Environment protection runbook, and keyless-signing roadmap.
+- 2026-05-22 — annual signing-key rotation scheduled as remote routine `trig_018BR9ZVeAzvocpPtPQQn4kR`, fires 2027-05-22T13:00:00Z (09:00 ET). Will open a tracking issue and hand off to maintainer; performs no cryptographic action.
+- 2026-05-22 — item 13 done: `SECURITY.md` shipped (threat model, SLAs, disclosure policy); GitHub Private Vulnerability Reporting enabled on the repo via `gh api`.
