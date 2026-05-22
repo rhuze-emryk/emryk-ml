@@ -1,15 +1,15 @@
 ---
-name: Build antigravity variant
+name: Build private-ml variant
 on:
   workflow_dispatch:
 
 env:
-  IMAGE_DESC: "Emryk ML with Google Antigravity IDE preinstalled. Variant of emryk-ml:latest."
-  IMAGE_KEYWORDS: "bootc,ublue,kinoite,nvidia,machine-learning,fedora,kde,cloud-workstation,antigravity"
+  IMAGE_DESC: "Emryk ML with Mullvad VPN daemon and Unsloth Studio preconfigured. Variant of emryk-ml:latest."
+  IMAGE_KEYWORDS: "bootc,ublue,kinoite,nvidia,machine-learning,fedora,kde,cloud-workstation,unsloth,mullvad,vpn,llm"
   IMAGE_LOGO_URL: "https://avatars.githubusercontent.com/u/120078124?s=200&v=4"
   IMAGE_NAME: "${{ github.event.repository.name }}"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
-  DEFAULT_TAG: "latest-antigravity"
+  DEFAULT_TAG: "latest-private-ml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build_push:
-    name: Build and push antigravity variant
+    name: Build and push private-ml variant
     runs-on: ubuntu-24.04
 
     permissions:
@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Lint shell scripts
-        run: shellcheck build_files/antigravity-install.sh
+        run: shellcheck build_files/private-ml-install.sh
 
       - name: Maximize build space
         uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
@@ -56,7 +56,7 @@ jobs:
             org.opencontainers.image.created=${{ steps.date.outputs.date }}
             org.opencontainers.image.description=${{ env.IMAGE_DESC }}
             org.opencontainers.image.documentation=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
-            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/blob/${{ github.sha }}/Containerfile.antigravity
+            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/blob/${{ github.sha }}/Containerfile.private-ml
             org.opencontainers.image.title=${{ env.IMAGE_NAME }}
             org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/tree/${{ github.sha }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
@@ -75,7 +75,7 @@ jobs:
         uses: redhat-actions/buildah-build@7a95fa7ee0f02d552a32753e7414641a04307056 # v2
         with:
           containerfiles: |
-            ./Containerfile.antigravity
+            ./Containerfile.private-ml
           image: ${{ env.IMAGE_NAME }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
