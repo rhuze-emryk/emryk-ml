@@ -116,3 +116,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 6 done: `tailscale.repo` vendored in `build_files/`.
 - 2026-05-22 — item 4 scope clarified: Cockpit is Tailscale-only by design.
 - 2026-05-22 — item 2 done: cosign verification enforced on pulls from `ghcr.io/rhuze-emryk` via shipped policy.json + registries.d + key.
+- 2026-05-22 — variant pin in `Containerfile.private-ml` bumped to the post-cosign base digest so the variant inherits the policy.
