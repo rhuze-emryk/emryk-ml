@@ -106,10 +106,20 @@ new ones when threat-model assumptions change.
   the change and the recovery (`sudo systemctl enable --now podman.socket`)
   for users who specifically need rootful.
 
-- [ ] **12. Cosign key rotation + access policy.**
-  If `SIGNING_SECRET` leaks, every prior signature becomes suspect. Define
-  rotation cadence; restrict workflow access; evaluate Sigstore keyless
-  signing as a longer-term move.
+- [x] **12. Cosign key rotation + access policy.** _(2026-05-22)_
+  Documented in [KEY-POLICY.md](./KEY-POLICY.md): threat model, access
+  policy (current state + target with GH Environment protection),
+  scheduled rotation cadence (**annual + on-incident**), the graceful
+  rotation procedure (transition image that trusts old+new keys; this
+  works without code change because the existing `containers-policy.json`
+  policy array already accepts multiple sigstoreSigned entries),
+  incident-response runbook, and the keyless-signing roadmap
+  (**evaluate by EOY 2026, migrate by EOY 2027**).
+
+  The GitHub Environment runbook in KEY-POLICY.md is a one-time UI task
+  the maintainer must do on github.com (`gh` is not available on the
+  workstation that drives this repo) — does not block closing this
+  item, since the policy itself is now defined.
 
 ## Low priority — worth doing eventually
 
@@ -159,3 +169,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 10 done: pinned `bootc-image-builder-action@main` → SHA; spot-verified all pre-existing pins via `git ls-remote`.
 - 2026-05-22 — item 11 done: rootful `podman.socket` disabled; rootless socket enabled globally per-user. Docker SDK consumers must move to `$DOCKER_HOST` pointing at rootless.
 - 2026-05-22 — item 9 done: default zone → `public`, override drops mdns/cockpit/high-ports; corrects item #4's wrong-assumption status (default was FedoraWorkstation, not public; cockpit was in fact LAN-reachable until this commit).
+- 2026-05-22 — item 12 done: `KEY-POLICY.md` shipped with rotation cadence (annual + on-incident), graceful procedure, incident runbook, GH Environment protection runbook, and keyless-signing roadmap.
