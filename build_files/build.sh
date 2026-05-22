@@ -121,5 +121,13 @@ systemctl enable \
     bootc-fetch-apply-updates.timer \
     cockpit.socket \
     emryk-install-flatpaks.service \
-    podman.socket \
     tailscaled.service
+
+# SECURITY-TODO #11: the system podman.socket runs as root and is the
+# classic local-root-escalation primitive (mount / into a privileged
+# container, you're root). We disable it and enable the *rootless*
+# podman.socket globally so every user gets /run/user/$UID/podman/podman.sock
+# automatically — scoped to their own privileges, no escalation path.
+# Users who specifically need the rootful socket can re-enable with
+# `sudo systemctl enable --now podman.socket`.
+systemctl --global enable podman.socket

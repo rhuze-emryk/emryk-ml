@@ -27,7 +27,7 @@ This is the public image foundation for the [Emryk Workstation](https://emryk.co
 | `gh` | GitHub CLI |
 | `git` / `curl` / `wget` | Standard tooling |
 
-**Systemd services enabled:** `tailscaled`, `cockpit.socket`, `podman.socket`
+**Systemd services enabled:** `tailscaled`, `cockpit.socket`, `bootc-fetch-apply-updates.timer`. The **rootless** per-user `podman.socket` is enabled globally (every user gets `/run/user/$UID/podman/podman.sock` automatically); the rootful system `podman.socket` is deliberately disabled — see "Containers" below.
 
 **Flatpaks:** Firefox is installed from Flathub at first boot via a oneshot systemd service (`emryk-install-flatpaks.service`). Network is required on first boot for this step.
 
@@ -94,6 +94,24 @@ To force-apply staged updates right now: `sudo systemctl reboot`. To roll back t
 ```bash
 sudo systemctl disable --now bootc-fetch-apply-updates.timer
 ```
+
+## Containers
+
+Container workloads run **rootless** by default. The rootless `podman.socket` is enabled globally, so every user automatically gets a Docker-compatible API socket at `/run/user/$UID/podman/podman.sock` — scoped to that user's own privileges, with no path to root. `podman`, `podman-compose`, `distrobox`, and the `docker` CLI (via `podman-docker`) all work out of the box.
+
+For applications that connect to the Docker socket via the Docker SDK, point them at the rootless socket:
+
+```bash
+export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock
+```
+
+The rootful system socket (`/run/podman/podman.sock`, owned by root) is **deliberately disabled** — it is the classic local-root-escalation primitive (mount `/` into a privileged container, you're root). If a specific workflow truly needs it:
+
+```bash
+sudo systemctl enable --now podman.socket
+```
+
+…and reconsider whether you actually want that. There is almost always a rootless equivalent.
 
 ## Verifying the image
 

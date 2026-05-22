@@ -81,9 +81,16 @@ new ones when threat-model assumptions change.
   build-disk.yml, post-v9 master in the others); both are SHA-pinned, so
   the audit goal is satisfied — Renovate (item #14) will harmonise them.
 
-- [ ] **11. Decide policy for system `podman.socket`.**
-  Currently enabled system-wide. Either document the threat model and
-  restrict access via group, or disable and steer users to rootless podman.
+- [x] **11. Disable rootful `podman.socket`; rootless on by default.** _(2026-05-22)_
+  System `podman.socket` removed from `systemctl enable` (it ran as root
+  and is the classic local-root-escalation primitive). Rootless
+  per-user socket enabled globally via `systemctl --global enable
+  podman.socket`, so every user gets `/run/user/$UID/podman/podman.sock`
+  automatically — scoped to their own privileges, no escalation path.
+  Docker SDK consumers must use `DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock`
+  rather than the legacy `/var/run/docker.sock` path. README documents
+  the change and the recovery (`sudo systemctl enable --now podman.socket`)
+  for users who specifically need rootful.
 
 - [ ] **12. Cosign key rotation + access policy.**
   If `SIGNING_SECRET` leaks, every prior signature becomes suspect. Define
@@ -136,3 +143,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 4 done: dedicated `tailscale` firewalld zone shipped; Cockpit reachable over tailnet only.
 - 2026-05-22 — item 7 done: `bootc-fetch-apply-updates.timer` enabled with `--apply` stripped via drop-in (fetch+stage only, never auto-reboot).
 - 2026-05-22 — item 10 done: pinned `bootc-image-builder-action@main` → SHA; spot-verified all pre-existing pins via `git ls-remote`.
+- 2026-05-22 — item 11 done: rootful `podman.socket` disabled; rootless socket enabled globally per-user. Docker SDK consumers must move to `$DOCKER_HOST` pointing at rootless.
