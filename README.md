@@ -65,6 +65,20 @@ Or use the Mullvad GUI app, also installed.
 
 **Unsloth Studio.** Not started automatically. Launch it from the application menu ("Start Unsloth Studio") or run `/usr/libexec/emryk/launch-unsloth-studio.sh`. The first launch pulls the `docker.io/unsloth/unsloth` image (multi-GB) and can take several minutes; subsequent launches are fast. The UI binds to `http://127.0.0.1:8888` only — not exposed on the LAN. Persistent state lives in the Podman named volume `unsloth-studio-data`.
 
+## Remote management
+
+Cockpit (browser-based system management) is installed and enabled on every build, but is **only reachable over Tailscale** — never over the LAN or the open internet.
+
+Mechanism: Fedora's default `public` firewalld zone does not allow port 9090, so Cockpit is closed to ethernet/wifi. The image additionally ships a dedicated `tailscale` firewalld zone (`target=ACCEPT`) with `tailscale0` pre-assigned, so once both ends of the tailnet are up the host's management plane is available to the operator and nobody else.
+
+Access it at:
+
+```
+https://<host>.<tailnet-name>.ts.net:9090
+```
+
+or via the host's tailnet IP (`https://100.x.y.z:9090`). If you ever need Cockpit reachable somewhere other than the tailnet, you'll have to explicitly add the `cockpit` service to another firewalld zone — and please reconsider whether you actually want that.
+
 ## Verifying the image
 
 Images are signed with [cosign](https://github.com/sigstore/cosign). The public key is `cosign.pub` in this repository.

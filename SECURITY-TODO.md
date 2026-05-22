@@ -32,12 +32,15 @@ new ones when threat-model assumptions change.
   Report-only — does not fail the build. Flip to `--fail-on critical` once
   a triage process is in place.
 
-- [ ] **4. Bind Cockpit to localhost + tailscale0 only.**
-  Design decision: Cockpit is intended to be reached over Tailscale, never
-  over the open internet. Implementation: drop a `cockpit.conf` snippet
-  setting `[WebService] Origins=` and bind only to the loopback + tailscale
-  interface, or rely on firewalld to allow port 9090 only on the `tailscale`
-  zone. Document the access pattern in README.
+- [x] **4. Cockpit reachable over Tailscale only.** _(2026-05-22)_
+  Implemented via firewalld rather than interface-binding (binding to a
+  dynamic tailnet IP at boot is fragile). Fedora's default `public` zone
+  does not allow port 9090, so ethernet/wifi exposure is already closed.
+  Additionally ships `/etc/firewalld/zones/tailscale.xml` (`target=ACCEPT`,
+  interface `tailscale0`) so the operator has full management access over
+  the tailnet immediately when tailscaled brings up the interface. Modern
+  tailscaled reuses an existing zone of this name. README documents the
+  access pattern.
 
 - [x] **5. Harden SSH defaults in the image.** _(2026-05-22)_
   `/etc/ssh/sshd_config.d/10-emryk.conf` shipped via `build.sh` enforcing
@@ -117,3 +120,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 4 scope clarified: Cockpit is Tailscale-only by design.
 - 2026-05-22 — item 2 done: cosign verification enforced on pulls from `ghcr.io/rhuze-emryk` via shipped policy.json + registries.d + key.
 - 2026-05-22 — variant pin in `Containerfile.private-ml` bumped to the post-cosign base digest so the variant inherits the policy.
+- 2026-05-22 — item 4 done: dedicated `tailscale` firewalld zone shipped; Cockpit reachable over tailnet only.

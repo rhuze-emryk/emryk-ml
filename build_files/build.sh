@@ -93,6 +93,18 @@ mkdir -p /etc/containers/registries.d
 install -m 0644 /ctx/registries.d/rhuze-emryk.yaml \
     /etc/containers/registries.d/rhuze-emryk.yaml
 
+# SECURITY-TODO #4: Cockpit is reachable over Tailscale only — never over
+# the open internet. Fedora's default public zone does not include cockpit,
+# so port 9090 is already closed on ethernet/wifi. We additionally ship a
+# dedicated "tailscale" firewalld zone (target=ACCEPT) with the tailscale0
+# interface pre-assigned, so the operator gets full management access over
+# the tailnet the moment tailscaled brings up the interface. Modern
+# tailscaled reuses an existing zone of this name instead of creating its
+# own, so there is no conflict.
+mkdir -p /etc/firewalld/zones
+install -m 0644 /ctx/firewalld/zones/tailscale.xml \
+    /etc/firewalld/zones/tailscale.xml
+
 systemctl enable \
     cockpit.socket \
     emryk-install-flatpaks.service \

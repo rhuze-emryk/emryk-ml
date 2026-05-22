@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="ACCEPT">
+  <short>Tailscale</short>
+  <description>Tailscale tailnet — trusted private network. All traffic from the tailscale0 interface is accepted.</description>
+  <interface name="tailscale0"/>
+</zone>
