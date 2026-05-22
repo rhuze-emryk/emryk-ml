@@ -144,6 +144,7 @@ systemctl enable \
     bootc-fetch-apply-updates.timer \
     cockpit.socket \
     emryk-install-flatpaks.service \
+    flatpak-system-update.timer \
     tailscaled.service
 
 # SECURITY-TODO #11: the system podman.socket runs as root and is the

@@ -181,8 +181,14 @@ new ones when threat-model assumptions change.
   `container_modify_selinux_labels`, etc. — each represents a
   capability that should be opt-in per workload, not blanket-enabled.
 
-- [ ] **16. Flatpak auto-update timer.** Firefox-via-flatpak doesn't update
-  on its own.
+- [x] **16. Flatpak auto-update timer.** _(2026-05-22)_
+  `flatpak-system-update.timer` enabled explicitly in `build.sh`. Fedora's
+  flatpak package ships this timer with a preset that enables it by
+  default, so this commit just asserts the secure default at the image
+  layer (matches #9 pattern). Cadence is the upstream default (daily).
+  Covers Firefox, Mullvad GUI, and any other system-installed flatpak
+  (user-scoped flatpaks update via the desktop UI or each user's own
+  `flatpak update`).
 
 - [ ] **17. Audit `wheel` sudo policy.** Verify the inherited Kinoite default
   requires a password, and pin it explicitly in the image rather than
@@ -220,3 +226,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 8 done: SLSA build provenance + CycloneDX SBOM attestations added to both publish workflows; pushed to GHCR as OCI referrers. Three independent trust signals per image now.
 - 2026-05-22 — item 14 done: `renovate.json` shipped (action SHA + base-image digest pinning, custom managers for GRYPE_VERSION/SYFT_VERSION, weekly schedule, no auto-merge). Maintainer must install the Renovate GitHub App at github.com/apps/renovate for the config to activate.
 - 2026-05-22 — item 15 done: SELinux audited (enforcing/targeted, container_use_dri_devices on) and explicitly declared via shipped `/etc/selinux/config`.
+- 2026-05-22 — item 16 done: `flatpak-system-update.timer` explicitly enabled (Fedora preset already enables it; asserting in build.sh).
