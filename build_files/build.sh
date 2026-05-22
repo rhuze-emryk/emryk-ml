@@ -128,6 +128,14 @@ firewall-offline-cmd --set-default-zone=public
 # diagnostic and file a SECURITY-TODO follow-up.
 install -m 0644 /ctx/selinux/config /etc/selinux/config
 
+# SECURITY-TODO #17: assert wheel-requires-password rather than inherit it.
+# sudoers drop-ins are loaded alphabetically; the last matching rule wins,
+# so the 99- prefix guarantees this file overrides anything an upstream
+# package ever ships under a lower prefix. Mode MUST be 0440 or sudo
+# refuses to load the file.
+install -m 0440 /ctx/sudoers.d/99-emryk-wheel \
+    /etc/sudoers.d/99-emryk-wheel
+
 # SECURITY-TODO #7: enable bootc auto-updates, but as fetch+stage only —
 # never auto-reboot. The stock `bootc-fetch-apply-updates.service` runs
 # `bootc upgrade --apply`, which can reboot the host any time the timer

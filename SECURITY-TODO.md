@@ -190,9 +190,15 @@ new ones when threat-model assumptions change.
   (user-scoped flatpaks update via the desktop UI or each user's own
   `flatpak update`).
 
-- [ ] **17. Audit `wheel` sudo policy.** Verify the inherited Kinoite default
-  requires a password, and pin it explicitly in the image rather than
-  relying on inheritance.
+- [x] **17. Pin wheel sudo to require a password.** _(2026-05-22)_
+  Ship `/etc/sudoers.d/99-emryk-wheel` (mode 0440) with
+  `%wheel ALL=(ALL) ALL` — no NOPASSWD. The 99- prefix means this
+  drop-in is the last loaded under `/etc/sudoers.d/`, so it overrides
+  anything an upstream package might ship at a lower prefix. Matches
+  the Fedora default but asserts it at the image layer so a future
+  upstream change cannot silently relax it. Customers who want
+  passwordless sudo can ship their own `99zz-` drop-in but must do so
+  deliberately.
 
 ---
 
@@ -227,3 +233,5 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 14 done: `renovate.json` shipped (action SHA + base-image digest pinning, custom managers for GRYPE_VERSION/SYFT_VERSION, weekly schedule, no auto-merge). Maintainer must install the Renovate GitHub App at github.com/apps/renovate for the config to activate.
 - 2026-05-22 — item 15 done: SELinux audited (enforcing/targeted, container_use_dri_devices on) and explicitly declared via shipped `/etc/selinux/config`.
 - 2026-05-22 — item 16 done: `flatpak-system-update.timer` explicitly enabled (Fedora preset already enables it; asserting in build.sh).
+- 2026-05-22 — item 17 done: wheel-requires-password asserted via `/etc/sudoers.d/99-emryk-wheel` (last-loaded drop-in overrides any future upstream NOPASSWD).
+- 2026-05-22 — **SECURITY-TODO is empty.** Backlog closed; ongoing hygiene runs via Renovate (#14), the auto-update timer (#7), and the scheduled key rotation (#12).

@@ -30,6 +30,7 @@ The `bootc-fetch-apply-updates.timer` enabled in the image fetches updates rough
 | Signing-key compromise | Annual scheduled rotation + on-incident rotation, with a graceful transition window | [KEY-POLICY.md](./KEY-POLICY.md) |
 | Process escape via kernel vulnerability or misbehaving container | SELinux **enforcing**, targeted policy; explicitly declared in the image | `/etc/selinux/config` |
 | Unpatched system flatpaks (Firefox, etc.) sitting between user actions | `flatpak-system-update.timer` enabled in the image; auto-updates daily | `build_files/build.sh` |
+| Silent privilege escalation via inherited sudoers (e.g., a future upstream NOPASSWD default) | `wheel` group requires password for sudo, asserted at the image layer via a 99-prefixed drop-in | `/etc/sudoers.d/99-emryk-wheel` |
 
 ## Threat model — what this image does NOT protect against
 

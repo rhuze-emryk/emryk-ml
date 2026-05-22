@@ -1,0 +1,15 @@
+# SECURITY-TODO #17: assert that members of the `wheel` group must
+# authenticate with their password before sudo. This is the Fedora
+# default, but it is asserted here at the image layer so the audit
+# does not depend on an upstream package's default never changing.
+#
+# Drop-ins in /etc/sudoers.d/ are processed in alphabetical order; the
+# last matching rule wins. The 99- prefix guarantees this file is
+# applied after any other Fedora-shipped drop-in, so even if a future
+# upstream package landed a NOPASSWD line for %wheel, this file
+# overrides it.
+#
+# Customers who specifically want passwordless sudo for their own user
+# can ship their own drop-in (e.g. /etc/sudoers.d/99zz-local-user) but
+# must do so deliberately, with knowledge of what they are giving up.
+%wheel ALL=(ALL) ALL
