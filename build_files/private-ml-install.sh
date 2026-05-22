@@ -20,6 +20,12 @@ curl -fsSL https://repository.mullvad.net/rpm/stable/mullvad.repo \
 curl -fsSL https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
     -o /etc/yum.repos.d/nvidia-container-toolkit.repo
 
+# On bootc images /opt is a symlink to /var/opt, and /var/opt does not exist
+# in the build container. Any RPM that writes under /opt (Mullvad installs to
+# "/opt/Mullvad VPN/") fails with cpio: mkdir failed unless the symlink target
+# is pre-created. Same pattern Bazzite uses for Steam.
+mkdir -p /var/opt
+
 dnf5 install -y \
     mullvad-vpn \
     nvidia-container-toolkit
