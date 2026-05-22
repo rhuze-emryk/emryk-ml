@@ -167,8 +167,19 @@ new ones when threat-model assumptions change.
   Until the install is done, `renovate.json` is inert. The config itself
   is committed and reviewed, which is the part this item was tracking.
 
-- [ ] **15. SELinux audit.** Confirm enforcing, document any booleans
-  required by NVIDIA-CDI / podman / ML workloads.
+- [x] **15. SELinux audit + explicit declaration.** _(2026-05-22)_
+  Verified the running Kinoite image: SELinux is **enforcing**, targeted
+  policy. Asserted explicitly in this image via shipped
+  `/etc/selinux/config` rather than inheriting the Fedora default
+  (matches the #9 pattern). The ML-relevant boolean
+  `container_use_dri_devices` is ON by default — required for containers
+  (distrobox, podman) to access the GPU's DRI devices for CUDA / ML
+  workloads. We do not change it; documenting only.
+
+  Other container booleans are off by default and we leave them that
+  way: `container_manage_cgroup`, `container_use_devices`,
+  `container_modify_selinux_labels`, etc. — each represents a
+  capability that should be opt-in per workload, not blanket-enabled.
 
 - [ ] **16. Flatpak auto-update timer.** Firefox-via-flatpak doesn't update
   on its own.
@@ -208,3 +219,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 13 done: `SECURITY.md` shipped (threat model, SLAs, disclosure policy); GitHub Private Vulnerability Reporting enabled on the repo via `gh api`.
 - 2026-05-22 — item 8 done: SLSA build provenance + CycloneDX SBOM attestations added to both publish workflows; pushed to GHCR as OCI referrers. Three independent trust signals per image now.
 - 2026-05-22 — item 14 done: `renovate.json` shipped (action SHA + base-image digest pinning, custom managers for GRYPE_VERSION/SYFT_VERSION, weekly schedule, no auto-merge). Maintainer must install the Renovate GitHub App at github.com/apps/renovate for the config to activate.
+- 2026-05-22 — item 15 done: SELinux audited (enforcing/targeted, container_use_dri_devices on) and explicitly declared via shipped `/etc/selinux/config`.

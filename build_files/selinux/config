@@ -1,0 +1,22 @@
+# SECURITY-TODO #15: SELinux is explicitly enforced in this image rather
+# than inherited from Fedora's default. This guarantees that an upstream
+# package change cannot silently relax SELinux, and gives the audit trail
+# a single place to look.
+#
+# SELinux state controls:
+#     enforcing  - SELinux policy is enforced.
+#     permissive - SELinux prints warnings instead of enforcing.
+#     disabled   - No SELinux policy is loaded. (Up to and including
+#                  Fedora 40 this also requires `selinux=0` on the
+#                  kernel command line.)
+#
+# Recovery if SELinux denials break a workload: `setenforce 0` puts the
+# running kernel in permissive mode without rebooting, and the customer
+# can `bootc rollback` if a future image regresses SELinux contexts.
+SELINUX=enforcing
+
+# SELINUXTYPE choices:
+#     targeted - default; targeted processes are confined.
+#     minimum  - smaller targeted policy.
+#     mls      - Multi Level Security.
+SELINUXTYPE=targeted

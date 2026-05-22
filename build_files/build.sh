@@ -118,6 +118,16 @@ install -m 0644 /ctx/firewalld/zones/public.xml \
     /etc/firewalld/zones/public.xml
 firewall-offline-cmd --set-default-zone=public
 
+# SECURITY-TODO #15: assert SELinux is enforcing rather than relying on
+# the Fedora default. Fedora ships enforcing by default — we ship an
+# explicit /etc/selinux/config so that asserting this is part of the
+# image's audit trail. NVIDIA-CDI / podman / distrobox ML workloads
+# depend on the `container_use_dri_devices` SELinux boolean being ON,
+# which is the Fedora default; we do not change it. Customers who hit
+# an SELinux denial they cannot explain can `setenforce 0` for a quick
+# diagnostic and file a SECURITY-TODO follow-up.
+install -m 0644 /ctx/selinux/config /etc/selinux/config
+
 # SECURITY-TODO #7: enable bootc auto-updates, but as fetch+stage only —
 # never auto-reboot. The stock `bootc-fetch-apply-updates.service` runs
 # `bootc upgrade --apply`, which can reboot the host any time the timer

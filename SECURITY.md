@@ -28,6 +28,7 @@ The `bootc-fetch-apply-updates.timer` enabled in the image fetches updates rough
 | CVEs in installed packages | Every CI build runs a Grype scan against the just-built image; results posted to the workflow job summary | `.github/workflows/build.yml`, `build-private-ml.yml` |
 | CI supply-chain compromise (moving-tag GitHub Actions, untrusted dependencies pulled at build time) | Every action and base image is SHA/digest-pinned; `tailscale.repo` is vendored; Renovate opens PRs to keep pins current so the audit is continuous, not point-in-time | `.github/workflows/*.yml`, `build_files/tailscale.repo`, `renovate.json` |
 | Signing-key compromise | Annual scheduled rotation + on-incident rotation, with a graceful transition window | [KEY-POLICY.md](./KEY-POLICY.md) |
+| Process escape via kernel vulnerability or misbehaving container | SELinux **enforcing**, targeted policy; explicitly declared in the image | `/etc/selinux/config` |
 
 ## Threat model — what this image does NOT protect against
 
