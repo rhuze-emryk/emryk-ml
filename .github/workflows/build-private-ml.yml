@@ -22,6 +22,8 @@ env:
   IMAGE_NAME: "${{ github.event.repository.name }}"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "latest-private-ml"
+  # Pinned for reproducibility; bumped by renovate (SECURITY-TODO #14).
+  GRYPE_VERSION: "v0.112.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -95,6 +97,30 @@ jobs:
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
           oci: false
+
+      # SECURITY-TODO #3: scan the freshly-built variant for known CVEs.
+      # Report-only — does not fail the build. The variant inherits all of
+      # the base image's CVEs plus anything Mullvad/Unsloth/NVIDIA layer adds.
+      - name: Install Grype
+        run: |
+          curl -fsSL "https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}/grype_${GRYPE_VERSION#v}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin grype
+          grype version
+
+      - name: Scan image with Grype (report-only)
+        continue-on-error: true
+        run: |
+          grype "podman:localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
+            --output table \
+            --fail-on never \
+            | tee grype-report.txt
+          {
+            echo "## Grype vulnerability scan — \`${IMAGE_NAME}:${DEFAULT_TAG}\`"
+            echo ""
+            echo '```'
+            cat grype-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0

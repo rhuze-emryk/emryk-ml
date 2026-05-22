@@ -20,6 +20,8 @@ env:
   IMAGE_NAME: "${{ github.event.repository.name }}"  # output image name, usually same as repo name
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"  # do not edit
   DEFAULT_TAG: "latest"
+  # Pinned for reproducibility; bumped by renovate (SECURITY-TODO #14).
+  GRYPE_VERSION: "v0.112.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name}}-${{ inputs.stream_name }}
@@ -107,6 +109,31 @@ jobs:
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
           oci: false
+
+      # SECURITY-TODO #3: scan the freshly-built image for known CVEs.
+      # Report-only — does not fail the build. Flip to a non-zero `--fail-on`
+      # once a triage process is in place. Runs on every build (PRs too) so
+      # reviewers see the impact of dependency changes.
+      - name: Install Grype
+        run: |
+          curl -fsSL "https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}/grype_${GRYPE_VERSION#v}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin grype
+          grype version
+
+      - name: Scan image with Grype (report-only)
+        continue-on-error: true
+        run: |
+          grype "podman:localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
+            --output table \
+            --fail-on never \
+            | tee grype-report.txt
+          {
+            echo "## Grype vulnerability scan — \`${IMAGE_NAME}:${DEFAULT_TAG}\`"
+            echo ""
+            echo '```'
+            cat grype-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Rechunk is a script that we use on Universal Blue to make sure there isnt a single huge layer when your image gets published.
       # This does not make your image faster to download, just provides better resumability and fixes a few errors.

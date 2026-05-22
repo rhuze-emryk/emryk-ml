@@ -22,10 +22,11 @@ new ones when threat-model assumptions change.
   Without this, a compromised GHCR token lets an attacker push a malicious
   `:latest` and every user upgrade silently accepts it.
 
-- [ ] **3. Add vulnerability scanning to the build workflow.**
-  No Trivy/Grype step today. Run against the built image, fail (or at
-  minimum surface) on critical CVEs. Catches both upstream Fedora issues
-  and anything we introduce.
+- [x] **3. Add vulnerability scanning to the build workflow.** _(2026-05-22)_
+  Grype scan added to both `build.yml` and `build-private-ml.yml`, runs on
+  every build (PRs included) and posts a table to the workflow job summary.
+  Report-only — does not fail the build. Flip to `--fail-on critical` once
+  a triage process is in place.
 
 - [ ] **4. Cockpit listens on all interfaces by default.**
   For a cloud workstation that may have a public IP, this is exposed admin
@@ -106,3 +107,4 @@ These come up in generic hardening checklists but are not a fit here:
 
 - 2026-05-22 — initial backlog created.
 - 2026-05-22 — item 1 done: upstream base images digest-pinned in both Containerfiles.
+- 2026-05-22 — item 3 done: Grype CVE scan added to both build workflows (report-only).
