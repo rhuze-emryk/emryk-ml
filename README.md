@@ -79,6 +79,22 @@ https://<host>.<tailnet-name>.ts.net:9090
 
 or via the host's tailnet IP (`https://100.x.y.z:9090`). If you ever need Cockpit reachable somewhere other than the tailnet, you'll have to explicitly add the `cockpit` service to another firewalld zone — and please reconsider whether you actually want that.
 
+## Updates
+
+`bootc-fetch-apply-updates.timer` is enabled on every build, and runs roughly every 8 hours (with 2h randomised jitter). It **fetches and stages** updates from the registry but **does not reboot** — a customer training job can run for days, and a surprise unattended reboot would vaporise it.
+
+When an update has been staged, the change takes effect on the next reboot. To check what's queued:
+
+```bash
+bootc status
+```
+
+To force-apply staged updates right now: `sudo systemctl reboot`. To roll back to the previous deployment if the new one misbehaves: `sudo bootc rollback && sudo systemctl reboot`. To opt out of auto-fetching entirely:
+
+```bash
+sudo systemctl disable --now bootc-fetch-apply-updates.timer
+```
+
 ## Verifying the image
 
 Images are signed with [cosign](https://github.com/sigstore/cosign). The public key is `cosign.pub` in this repository.

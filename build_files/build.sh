@@ -105,7 +105,20 @@ mkdir -p /etc/firewalld/zones
 install -m 0644 /ctx/firewalld/zones/tailscale.xml \
     /etc/firewalld/zones/tailscale.xml
 
+# SECURITY-TODO #7: enable bootc auto-updates, but as fetch+stage only —
+# never auto-reboot. The stock `bootc-fetch-apply-updates.service` runs
+# `bootc upgrade --apply`, which can reboot the host any time the timer
+# fires (~every 8h with 2h jitter). That is unacceptable for an ML
+# workstation where a training job can survive multiple days. The drop-in
+# below clears `--apply` so updates download and stage silently; the user
+# picks the moment to reboot. Opt out entirely with
+# `systemctl disable --now bootc-fetch-apply-updates.timer`.
+mkdir -p /etc/systemd/system/bootc-fetch-apply-updates.service.d
+install -m 0644 /ctx/systemd/bootc-fetch-apply-updates.service.d/10-emryk.conf \
+    /etc/systemd/system/bootc-fetch-apply-updates.service.d/10-emryk.conf
+
 systemctl enable \
+    bootc-fetch-apply-updates.timer \
     cockpit.socket \
     emryk-install-flatpaks.service \
     podman.socket \

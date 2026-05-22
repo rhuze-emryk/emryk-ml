@@ -55,9 +55,12 @@ new ones when threat-model assumptions change.
 
 ## Medium priority — hardening and defense in depth
 
-- [ ] **7. Enable `bootc-fetch-apply-updates.timer`.**
-  Security fixes only matter if they reach users. Enable the timer so
-  pushed updates are pulled automatically. Document the rollback story.
+- [x] **7. Enable `bootc-fetch-apply-updates.timer` (fetch-only).** _(2026-05-22)_
+  Timer enabled in `build.sh`. Service overridden via drop-in
+  `/etc/systemd/system/bootc-fetch-apply-updates.service.d/10-emryk.conf`
+  to drop `--apply`, so updates download and stage silently every ~8h but
+  never auto-reboot — preserving long-running training jobs. README
+  documents the cadence, opt-out, and rollback story.
 
 - [ ] **8. SLSA build provenance + SBOM in CI.**
   Add `actions/attest-build-provenance` and a CycloneDX/SPDX SBOM step.
@@ -121,3 +124,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 2 done: cosign verification enforced on pulls from `ghcr.io/rhuze-emryk` via shipped policy.json + registries.d + key.
 - 2026-05-22 — variant pin in `Containerfile.private-ml` bumped to the post-cosign base digest so the variant inherits the policy.
 - 2026-05-22 — item 4 done: dedicated `tailscale` firewalld zone shipped; Cockpit reachable over tailnet only.
+- 2026-05-22 — item 7 done: `bootc-fetch-apply-updates.timer` enabled with `--apply` stripped via drop-in (fetch+stage only, never auto-reboot).
