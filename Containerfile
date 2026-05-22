@@ -1,5 +1,8 @@
 FROM scratch AS ctx
 COPY build_files /
+# Public cosign key — build.sh drops a copy at /etc/pki/containers/ for
+# runtime signature verification of future pulls (SECURITY-TODO #2).
+COPY cosign.pub /cosign.pub
 
 # Base images are pinned by digest so an upstream tag rewrite cannot silently
 # change what we build. The tag is kept for readability; the digest is what

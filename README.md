@@ -75,6 +75,16 @@ cosign verify \
     ghcr.io/rhuze-emryk/emryk-ml:latest
 ```
 
+**Enforced on installed systems.** Builds containing this policy ship
+`/etc/containers/policy.json` requiring sigstore-signed pulls from
+`ghcr.io/rhuze-emryk/`, verified against the cosign public key installed at
+`/etc/pki/containers/rhuze-emryk.pub`. Once you `bootc switch` to such a build,
+any subsequent pull from this namespace that fails verification is rejected
+before being staged for boot. Other registries (Flathub, Docker Hub, ublue-os)
+continue to use the default accept-anything policy. If a misconfiguration ever
+breaks pulls, `sudo bootc rollback` returns you to the previous deployment,
+which uses the older policy.
+
 ## Tags
 
 | Tag | Description |

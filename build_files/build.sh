@@ -76,6 +76,23 @@ KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 EOF
 
+# SECURITY-TODO #2: enforce cosign signature verification on pulls from
+# ghcr.io/rhuze-emryk. After a user `bootc switch`es to a build that contains
+# these files, every subsequent pull from our namespace must verify against
+# the public key shipped at /etc/pki/containers/rhuze-emryk.pub or the pull
+# is rejected. Other registries (Flathub, docker.io for unsloth, ublue-os
+# bases) continue to use the default insecureAcceptAnything so they keep
+# working unchanged. Recovery from a misconfiguration is `bootc rollback` to
+# the pre-policy deployment.
+mkdir -p /etc/pki/containers
+install -m 0644 /ctx/cosign.pub /etc/pki/containers/rhuze-emryk.pub
+
+install -m 0644 /ctx/containers-policy.json /etc/containers/policy.json
+
+mkdir -p /etc/containers/registries.d
+install -m 0644 /ctx/registries.d/rhuze-emryk.yaml \
+    /etc/containers/registries.d/rhuze-emryk.yaml
+
 systemctl enable \
     cockpit.socket \
     emryk-install-flatpaks.service \

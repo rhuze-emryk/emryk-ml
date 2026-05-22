@@ -1,0 +1,3 @@
+docker:
+  ghcr.io/rhuze-emryk:
+    use-sigstore-attachments: true

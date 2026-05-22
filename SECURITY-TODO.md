@@ -15,12 +15,16 @@ new ones when threat-model assumptions change.
   both `Containerfile` and `Containerfile.private-ml`. Bumps are manual until
   renovate (item 14) is wired up.
 
-- [ ] **2. Enforce cosign verification on `bootc switch` / pulls.**
-  Images are signed but installed systems do not require a valid signature
-  by default. Ship `/etc/containers/policy.json` + `registries.d/` config
-  so any pull from `ghcr.io/rhuze-emryk/` must verify against `cosign.pub`.
-  Without this, a compromised GHCR token lets an attacker push a malicious
-  `:latest` and every user upgrade silently accepts it.
+- [x] **2. Enforce cosign verification on `bootc switch` / pulls.** _(2026-05-22)_
+  Shipped via `build.sh`: `/etc/containers/policy.json` requires
+  `sigstoreSigned` for `ghcr.io/rhuze-emryk` (default policy stays
+  `insecureAcceptAnything` so Flathub/docker.io/ublue still work).
+  `/etc/containers/registries.d/rhuze-emryk.yaml` uses
+  `use-sigstore-attachments: true` so the legacy `sha256-X.sig` sibling
+  tag format that cosign writes is discovered. Validated locally with
+  `skopeo copy`: real key allows the pull, wrong key rejected with an
+  ASN.1 signature error. Recovery if misconfigured: `bootc rollback` to
+  pre-policy deployment.
 
 - [x] **3. Add vulnerability scanning to the build workflow.** _(2026-05-22)_
   Grype scan added to both `build.yml` and `build-private-ml.yml`, runs on
@@ -111,3 +115,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 5 done: SSH hardening drop-in shipped via `build.sh`.
 - 2026-05-22 — item 6 done: `tailscale.repo` vendored in `build_files/`.
 - 2026-05-22 — item 4 scope clarified: Cockpit is Tailscale-only by design.
+- 2026-05-22 — item 2 done: cosign verification enforced on pulls from `ghcr.io/rhuze-emryk` via shipped policy.json + registries.d + key.
