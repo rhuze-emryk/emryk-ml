@@ -70,9 +70,16 @@ new ones when threat-model assumptions change.
   Don't inherit Kinoite defaults — declare them. Public zone deny-all
   except SSH (when applicable) and trust the Tailscale interface.
 
-- [ ] **10. Pin every GitHub Action by SHA.**
-  Audit all workflows. A compromised action with a moving tag can exfil
-  `SIGNING_SECRET`.
+- [x] **10. Pin every GitHub Action by SHA.** _(2026-05-22)_
+  Audited every `uses:` line in `build.yml`, `build-private-ml.yml`,
+  `build-disk.yml`. The only branch-tracking ref —
+  `osbuild/bootc-image-builder-action@main` — is now pinned to commit
+  `31d72f79…` (the action has no useful tagged releases). All other
+  pre-existing SHA pins were verified against their claimed tags via
+  `git ls-remote --tags` (no drift). `ublue-os/remove-unwanted-software`
+  is intentionally on two different SHAs across workflows (v9 in
+  build-disk.yml, post-v9 master in the others); both are SHA-pinned, so
+  the audit goal is satisfied — Renovate (item #14) will harmonise them.
 
 - [ ] **11. Decide policy for system `podman.socket`.**
   Currently enabled system-wide. Either document the threat model and
@@ -90,7 +97,10 @@ new ones when threat-model assumptions change.
   layer their own controls. Public-facing.
 
 - [ ] **14. Wire renovate** properly. Workflow comments reference it but
-  it isn't configured.
+  it isn't configured. This is the long-term answer to item #10 —
+  Renovate's `pinDigests` mode will keep every action SHA current and
+  open PRs as new versions ship, so the audit is continuous rather than
+  point-in-time. Also covers base-image digest bumps (item #1).
 
 - [ ] **15. SELinux audit.** Confirm enforcing, document any booleans
   required by NVIDIA-CDI / podman / ML workloads.
@@ -125,3 +135,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — variant pin in `Containerfile.private-ml` bumped to the post-cosign base digest so the variant inherits the policy.
 - 2026-05-22 — item 4 done: dedicated `tailscale` firewalld zone shipped; Cockpit reachable over tailnet only.
 - 2026-05-22 — item 7 done: `bootc-fetch-apply-updates.timer` enabled with `--apply` stripped via drop-in (fetch+stage only, never auto-reboot).
+- 2026-05-22 — item 10 done: pinned `bootc-image-builder-action@main` → SHA; spot-verified all pre-existing pins via `git ls-remote`.
