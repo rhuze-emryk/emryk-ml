@@ -69,7 +69,15 @@ Or use the Mullvad GUI app, also installed.
 
 Cockpit (browser-based system management) is installed and enabled on every build, but is **only reachable over Tailscale** — never over the LAN or the open internet.
 
-Mechanism: Fedora's default `public` firewalld zone does not allow port 9090, so Cockpit is closed to ethernet/wifi. The image additionally ships a dedicated `tailscale` firewalld zone (`target=ACCEPT`) with `tailscale0` pre-assigned, so once both ends of the tailnet are up the host's management plane is available to the operator and nobody else.
+Mechanism — the image declares its perimeter explicitly:
+
+| Interface | Zone | What's reachable |
+|---|---|---|
+| ethernet / wifi (untrusted) | `public` (default) | `ssh` only (key-only, no password, no root — see SSH hardening below) + `dhcpv6-client`. Cockpit, mDNS, Samba, and all high ports are closed. |
+| `tailscale0` (your trust boundary) | `tailscale` (`target=ACCEPT`) | Everything. Full operator access — Cockpit, ad-hoc HTTP servers, anything you bind. |
+| `lo` (loopback) | unfiltered | Local apps unaffected. |
+
+The default zone is **`public`**, not Fedora's stock `FedoraWorkstation` — the latter is permissive for desktop use and allows TCP/UDP 1025–65535 wide open, which is inappropriate for a workstation that may sit on a hostile LAN or a public IP.
 
 Access it at:
 

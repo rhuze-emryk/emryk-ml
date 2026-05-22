@@ -32,15 +32,17 @@ new ones when threat-model assumptions change.
   Report-only — does not fail the build. Flip to `--fail-on critical` once
   a triage process is in place.
 
-- [x] **4. Cockpit reachable over Tailscale only.** _(2026-05-22)_
-  Implemented via firewalld rather than interface-binding (binding to a
-  dynamic tailnet IP at boot is fragile). Fedora's default `public` zone
-  does not allow port 9090, so ethernet/wifi exposure is already closed.
-  Additionally ships `/etc/firewalld/zones/tailscale.xml` (`target=ACCEPT`,
-  interface `tailscale0`) so the operator has full management access over
-  the tailnet immediately when tailscaled brings up the interface. Modern
-  tailscaled reuses an existing zone of this name. README documents the
-  access pattern.
+- [x] **4. Cockpit reachable over Tailscale only.** _(2026-05-22; correctly closed by item #9)_
+  Initial commit shipped `/etc/firewalld/zones/tailscale.xml`
+  (`target=ACCEPT`, interface `tailscale0`) — the tailnet half is correct.
+  However the original status note claimed "Fedora's default `public`
+  zone does not allow port 9090, so ethernet/wifi exposure is already
+  closed." That was wrong: Kinoite ships `FedoraWorkstation` (not
+  `public`) as the default zone, and FedoraWorkstation allows cockpit
+  plus all TCP/UDP 1025–65535. Cockpit was in fact LAN-reachable on the
+  initial image. The fix lands in item #9 (default zone → `public`,
+  with cockpit and high ports stripped). Treat #4 as fully closed only
+  after #9 ships.
 
 - [x] **5. Harden SSH defaults in the image.** _(2026-05-22)_
   `/etc/ssh/sshd_config.d/10-emryk.conf` shipped via `build.sh` enforcing
@@ -66,9 +68,21 @@ new ones when threat-model assumptions change.
   Add `actions/attest-build-provenance` and a CycloneDX/SPDX SBOM step.
   Commercial customers will ask for both.
 
-- [ ] **9. Explicit firewalld zone config.**
-  Don't inherit Kinoite defaults — declare them. Public zone deny-all
-  except SSH (when applicable) and trust the Tailscale interface.
+- [x] **9. Explicit firewalld zone config.** _(2026-05-22)_
+  Default zone switched from inherited `FedoraWorkstation` (which
+  allowed cockpit + all TCP/UDP 1025–65535 wide open) to `public`,
+  set in `build.sh` via `firewall-offline-cmd --set-default-zone=public`.
+  `/etc/firewalld/zones/public.xml` overrides the upstream public zone
+  to keep only `ssh` (key-only, see item #5) and `dhcpv6-client`;
+  `mdns`, `cockpit`, and everything else are dropped. Combined with
+  item #4's `tailscale` zone (`target=ACCEPT`), the perimeter is now
+  explicitly declared: untrusted networks see only SSH, the tailnet
+  sees everything, loopback is unfiltered.
+
+  Upgrade gotcha: NM connection profiles created before this lands
+  inherit the default zone implicitly. Existing profiles should fall
+  back to `public` automatically on reboot, but `nmcli c modify <conn>
+  connection.zone public` is the manual fix if not.
 
 - [x] **10. Pin every GitHub Action by SHA.** _(2026-05-22)_
   Audited every `uses:` line in `build.yml`, `build-private-ml.yml`,
@@ -144,3 +158,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 7 done: `bootc-fetch-apply-updates.timer` enabled with `--apply` stripped via drop-in (fetch+stage only, never auto-reboot).
 - 2026-05-22 — item 10 done: pinned `bootc-image-builder-action@main` → SHA; spot-verified all pre-existing pins via `git ls-remote`.
 - 2026-05-22 — item 11 done: rootful `podman.socket` disabled; rootless socket enabled globally per-user. Docker SDK consumers must move to `$DOCKER_HOST` pointing at rootless.
+- 2026-05-22 — item 9 done: default zone → `public`, override drops mdns/cockpit/high-ports; corrects item #4's wrong-assumption status (default was FedoraWorkstation, not public; cockpit was in fact LAN-reachable until this commit).

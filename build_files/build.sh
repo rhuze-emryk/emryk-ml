@@ -105,6 +105,19 @@ mkdir -p /etc/firewalld/zones
 install -m 0644 /ctx/firewalld/zones/tailscale.xml \
     /etc/firewalld/zones/tailscale.xml
 
+# SECURITY-TODO #9: declare the perimeter explicitly. Kinoite inherits
+# FedoraWorkstation as the default zone, which allows TCP/UDP 1025-65535
+# wide open plus services like cockpit and samba-client — wholly
+# inappropriate for an internet-exposed workstation. We:
+#  1. Override /etc/firewalld/zones/public.xml to keep only ssh + dhcpv6
+#     (mdns removed; cockpit removed; everything else dropped).
+#  2. Set public as the default zone, so any NM connection without an
+#     explicit zone falls back to this strict baseline.
+# Management access continues to flow over the tailscale zone (item #4).
+install -m 0644 /ctx/firewalld/zones/public.xml \
+    /etc/firewalld/zones/public.xml
+firewall-offline-cmd --set-default-zone=public
+
 # SECURITY-TODO #7: enable bootc auto-updates, but as fetch+stage only —
 # never auto-reboot. The stock `bootc-fetch-apply-updates.service` runs
 # `bootc upgrade --apply`, which can reboot the host any time the timer
