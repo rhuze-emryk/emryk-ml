@@ -7,8 +7,11 @@ set -ouex pipefail
 echo -e "blacklist nouveau\noptions nouveau modeset=0" \
     > /usr/lib/modprobe.d/blacklist-nouveau.conf
 
-curl -fsSL https://pkgs.tailscale.com/stable/fedora/tailscale.repo \
-    -o /etc/yum.repos.d/tailscale.repo
+# Vendored from https://pkgs.tailscale.com/stable/fedora/tailscale.repo and
+# checked into build_files/. Freezes baseurl + gpgkey URLs at a state we have
+# reviewed — a CDN-level compromise that swaps either field cannot affect us
+# without a PR landing in this repo first. (SECURITY-TODO #6)
+cp /ctx/tailscale.repo /etc/yum.repos.d/tailscale.repo
 
 dnf5 install -y \
     btop \
@@ -57,6 +60,20 @@ StandardOutput=journal
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+# SSH hardening — key-only auth, no root login over SSH. Cloud workstations
+# with public IPs get scanned constantly; password auth and root login are
+# the two biggest brute-force surfaces. Drops into sshd_config.d so it
+# overrides Fedora defaults without editing the main sshd_config. Users who
+# need different behavior can drop their own file with a higher-numbered
+# prefix. (SECURITY-TODO #5)
+mkdir -p /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/10-emryk.conf <<'EOF'
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
 EOF
 
 systemctl enable \

@@ -28,23 +28,23 @@ new ones when threat-model assumptions change.
   Report-only — does not fail the build. Flip to `--fail-on critical` once
   a triage process is in place.
 
-- [ ] **4. Cockpit listens on all interfaces by default.**
-  For a cloud workstation that may have a public IP, this is exposed admin
-  UI. Either bind to localhost (require Tailscale / SSH-tunnel access) or
-  document that customers must firewall port 9090.
+- [ ] **4. Bind Cockpit to localhost + tailscale0 only.**
+  Design decision: Cockpit is intended to be reached over Tailscale, never
+  over the open internet. Implementation: drop a `cockpit.conf` snippet
+  setting `[WebService] Origins=` and bind only to the loopback + tailscale
+  interface, or rely on firewalld to allow port 9090 only on the `tailscale`
+  zone. Document the access pattern in README.
 
-- [ ] **5. Harden SSH defaults in the image.**
-  Ship `/etc/ssh/sshd_config.d/10-emryk.conf` enforcing:
-  - `PermitRootLogin no`
-  - `PasswordAuthentication no`
-  - `KbdInteractiveAuthentication no`
-  Public-IP cloud workstations get scanned within minutes of boot.
+- [x] **5. Harden SSH defaults in the image.** _(2026-05-22)_
+  `/etc/ssh/sshd_config.d/10-emryk.conf` shipped via `build.sh` enforcing
+  `PermitRootLogin no`, `PasswordAuthentication no`,
+  `KbdInteractiveAuthentication no`, `PermitEmptyPasswords no`.
 
-- [ ] **6. Vendor the `tailscale.repo` file.**
-  Currently `curl`-piped from `pkgs.tailscale.com` at build time. Packages
-  are GPG-checked, but a CDN-level compromise could swap baseurl/gpgkey
-  before the build sees it. Check the file into the repo and `cp` it into
-  place during build.
+- [x] **6. Vendor the `tailscale.repo` file.** _(2026-05-22)_
+  Checked in at `build_files/tailscale.repo`; `build.sh` now `cp`s it into
+  `/etc/yum.repos.d/` instead of `curl`-piping from the CDN at build time.
+  Follow-up worth considering: also vendor the GPG public key referenced by
+  `gpgkey=` so the import path is fully offline.
 
 ## Medium priority — hardening and defense in depth
 
@@ -108,3 +108,6 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — initial backlog created.
 - 2026-05-22 — item 1 done: upstream base images digest-pinned in both Containerfiles.
 - 2026-05-22 — item 3 done: Grype CVE scan added to both build workflows (report-only).
+- 2026-05-22 — item 5 done: SSH hardening drop-in shipped via `build.sh`.
+- 2026-05-22 — item 6 done: `tailscale.repo` vendored in `build_files/`.
+- 2026-05-22 — item 4 scope clarified: Cockpit is Tailscale-only by design.
