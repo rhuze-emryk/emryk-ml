@@ -102,7 +102,7 @@ jobs:
 
       - name: Build Image
         id: build_image
-        uses: redhat-actions/buildah-build@7a95fa7ee0f02d552a32753e7414641a04307056 # v2
+        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c # main as of 2026-04-09 (Node 24)
         with:
           containerfiles: |
             ./Containerfile
@@ -216,19 +216,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Inline replacement for redhat-actions/push-to-registry (deprecated on
+      # Node 20 and effectively unmaintained — no Node 24 update). buildah
+      # picks up the registry credentials from docker/login-action above.
+      # All tags point at the same content, so the manifest digest is
+      # identical across them — capture it once via --digestfile.
       - name: Push To GHCR
-        uses: redhat-actions/push-to-registry@5ed88d269cf581ea9ef6dd6806d01562096bee9c # v2
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: push
-        env:
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_PASSWORD: ${{ github.token }}
-        with:
-          registry: ${{ env.IMAGE_REGISTRY }}
-          image: ${{ env.IMAGE_NAME }}
-          tags: ${{ steps.metadata.outputs.tags }}
-          username: ${{ env.REGISTRY_USER }}
-          password: ${{ env.REGISTRY_PASSWORD }}
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          IMAGE_FULL="${IMAGE_REGISTRY}/${IMAGE_NAME}"
+          digest=""
+          for tag in ${{ steps.metadata.outputs.tags }}; do
+            if [ -z "$digest" ]; then
+              buildah push --digestfile=./push-digest.txt \
+                "localhost/${IMAGE_NAME}:${tag}" \
+                "docker://${IMAGE_FULL}:${tag}"
+              digest=$(cat ./push-digest.txt)
+            else
+              buildah push \
+                "localhost/${IMAGE_NAME}:${tag}" \
+                "docker://${IMAGE_FULL}:${tag}"
+            fi
+          done
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "Pushed ${IMAGE_FULL} @ ${digest}"
 
       # This section is optional and only needs to be enabled if you plan on distributing
       # your project for others to consume. You will need to create a public and private key

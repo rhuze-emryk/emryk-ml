@@ -92,7 +92,7 @@ jobs:
 
       - name: Build Image
         id: build_image
-        uses: redhat-actions/buildah-build@7a95fa7ee0f02d552a32753e7414641a04307056 # v2
+        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c # main as of 2026-04-09 (Node 24)
         with:
           containerfiles: |
             ./Containerfile.private-ml
@@ -164,18 +164,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Inline replacement for redhat-actions/push-to-registry — see the
+      # matching block in build.yml for rationale.
       - name: Push To GHCR
-        uses: redhat-actions/push-to-registry@5ed88d269cf581ea9ef6dd6806d01562096bee9c # v2
         id: push
-        env:
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_PASSWORD: ${{ github.token }}
-        with:
-          registry: ${{ env.IMAGE_REGISTRY }}
-          image: ${{ env.IMAGE_NAME }}
-          tags: ${{ steps.metadata.outputs.tags }}
-          username: ${{ env.REGISTRY_USER }}
-          password: ${{ env.REGISTRY_PASSWORD }}
+        run: |
+          IMAGE_FULL="${IMAGE_REGISTRY}/${IMAGE_NAME}"
+          digest=""
+          for tag in ${{ steps.metadata.outputs.tags }}; do
+            if [ -z "$digest" ]; then
+              buildah push --digestfile=./push-digest.txt \
+                "localhost/${IMAGE_NAME}:${tag}" \
+                "docker://${IMAGE_FULL}:${tag}"
+              digest=$(cat ./push-digest.txt)
+            else
+              buildah push \
+                "localhost/${IMAGE_NAME}:${tag}" \
+                "docker://${IMAGE_FULL}:${tag}"
+            fi
+          done
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "Pushed ${IMAGE_FULL} @ ${digest}"
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
