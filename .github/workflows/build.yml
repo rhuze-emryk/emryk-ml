@@ -122,15 +122,26 @@ jobs:
       - name: Extract RPM database from built image
         run: |
           # buildah unshare enters a user namespace so rootless mount works.
+          # On this image /usr/lib/sysimage/rpm is a symlink to ../../share/rpm,
+          # so `cp -RL` dereferences it to copy the actual rpmdb.sqlite (~115MB)
+          # into the path layout syft expects. Without -L the copy would be a
+          # ~16-byte symlink and syft would find zero packages.
           buildah unshare bash -ec '
             ctr=$(buildah from "localhost/${IMAGE_NAME}:${DEFAULT_TAG}")
             root=$(buildah mount "$ctr")
-            mkdir -p ./sbom-input/usr/lib/sysimage
-            cp -a "$root/usr/lib/sysimage/rpm" ./sbom-input/usr/lib/sysimage/rpm
+            mkdir -p ./sbom-input/usr/lib/sysimage/rpm
+            cp -RL "$root/usr/lib/sysimage/rpm/." ./sbom-input/usr/lib/sysimage/rpm/
             buildah umount "$ctr"
             buildah rm "$ctr"
           '
           du -sh ./sbom-input
+          # Sanity check: a real Fedora RPM DB is tens of MB. < 10MB means the
+          # extract silently degraded (symlink not dereferenced, wrong path, etc).
+          size_kb=$(du -sk ./sbom-input | cut -f1)
+          if [ "$size_kb" -lt 10000 ]; then
+            echo "::error::sbom-input is only ${size_kb}KB — RPM DB extract failed."
+            exit 1
+          fi
 
       - name: Install Syft
         run: |
