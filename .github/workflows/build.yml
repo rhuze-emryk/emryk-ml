@@ -118,9 +118,10 @@ jobs:
       # archive so both scanners can read it via oci-archive: with no daemon.
       - name: Save image to OCI archive for scanning
         run: |
-          sudo buildah push "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
+          # redhat-actions/buildah-build writes to the runner user's
+          # rootless containers-storage, so invoke buildah without sudo.
+          buildah push "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
             "oci-archive:./image.oci"
-          sudo chown "$(id -u):$(id -g)" image.oci
 
       # SECURITY-TODO #3: scan the freshly-built image for known CVEs.
       # Report-only — does not fail the build. Flip to a non-zero `--fail-on`
