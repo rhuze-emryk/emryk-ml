@@ -113,6 +113,15 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
           oci: false
 
+      # GHA runners don't run a podman REST socket, so syft/grype can't use
+      # the podman: source. Dump the freshly-built image to a local OCI
+      # archive so both scanners can read it via oci-archive: with no daemon.
+      - name: Save image to OCI archive for scanning
+        run: |
+          sudo buildah push "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
+            "oci-archive:./image.oci"
+          sudo chown "$(id -u):$(id -g)" image.oci
+
       # SECURITY-TODO #3: scan the freshly-built image for known CVEs.
       # Report-only — does not fail the build. Flip to a non-zero `--fail-on`
       # once a triage process is in place. Runs on every build (PRs too) so
@@ -126,7 +135,7 @@ jobs:
       - name: Scan image with Grype (report-only)
         continue-on-error: true
         run: |
-          grype "podman:localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
+          grype "oci-archive:./image.oci" \
             --output table \
             | tee grype-report.txt
           {
@@ -224,11 +233,12 @@ jobs:
       - name: Generate SBOM (CycloneDX)
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: |
-          # SBOM the local podman image, not the just-pushed registry digest:
-          # pulling back the multi-GB image over the network exhausts the
-          # runner. attest-sbom below binds this SBOM to steps.push.outputs.digest,
-          # so the attestation still references the published artifact.
-          syft "podman:localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
+          # SBOM the local OCI archive (saved earlier from buildah storage),
+          # not the just-pushed registry digest: pulling back the multi-GB
+          # image over the network exhausts the runner. attest-sbom below
+          # binds this SBOM to steps.push.outputs.digest, so the attestation
+          # still references the published artifact.
+          syft "oci-archive:./image.oci" \
             -o cyclonedx-json=sbom.cdx.json
           echo "## SBOM" >> "$GITHUB_STEP_SUMMARY"
           echo "Generated \`sbom.cdx.json\` ($(wc -c < sbom.cdx.json) bytes) for \`${IMAGE_NAME}@${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
