@@ -26,13 +26,14 @@ new ones when threat-model assumptions change.
   ASN.1 signature error. Recovery if misconfigured: `bootc rollback` to
   pre-policy deployment.
 
-- [x] **3. Add vulnerability scanning to the build workflow.** _(2026-05-22; re-homed to nightly 2026-05-23)_
-  Grype scan now lives in `nightly-scan.yml` (matrix: `latest`,
-  `latest-private-ml`); posts a table to the workflow job summary.
-  Initially ran in `build.yml`/`build-private-ml.yml` per push but
-  stereoscope cataloging of the multi-GB bootc rootfs blew past the
-  free-runner lost-comms watchdog. Report-only — does not fail the
-  workflow. Flip to `--fail-on critical` once a triage process is in place.
+- [x] **3. Add vulnerability scanning to the build workflow.** _(2026-05-22; pivoted to SBOM-based scan 2026-05-23)_
+  Grype scan back in `build.yml` + `build-private-ml.yml`, running
+  per-push against the SBOM (`grype sbom:./sbom.cdx.json`) rather than
+  re-cataloging the image. Fast (seconds), report-only. Initial attempt
+  to scan the image directly blew past the free-runner lost-comms
+  watchdog on this multi-GB Fedora bootc rootfs; nightly fallback was
+  the first pivot, then SBOM-based scan let us put it back per-push.
+  Flip to `--fail-on critical` once a triage process is in place.
 
 - [x] **4. Cockpit reachable over Tailscale only.** _(2026-05-22; correctly closed by item #9)_
   Initial commit shipped `/etc/firewalld/zones/tailscale.xml`
@@ -66,26 +67,34 @@ new ones when threat-model assumptions change.
   never auto-reboot — preserving long-running training jobs. README
   documents the cadence, opt-out, and rollback story.
 
-- [x] **8. SLSA build provenance + SBOM in CI.** _(2026-05-22; SBOM half re-homed to nightly 2026-05-23)_
-  Both `build.yml` and `build-private-ml.yml` generate and attest:
-  - **SLSA build provenance** via `actions/attest-build-provenance@v4.1.0` (per-push)
-  - **CycloneDX-JSON SBOM** via `syft v1.44.0` + `actions/attest-sbom@v4.1.0`
-    — moved to `nightly-scan.yml` (2026-05-23). Stereoscope-based syft
-    cataloging of the multi-GB Fedora bootc rootfs cannot complete inside
-    a free GHA runner's lost-comms watchdog window; the nightly job runs
-    against the published GHCR image with verbose progress output and
-    longer headroom. SBOM attestation therefore trails per-push provenance
-    by up to 24h; provenance + signature give immediate trust.
+- [x] **8. SLSA build provenance + SBOM in CI.** _(2026-05-22; SBOM scope narrowed to RPM-only 2026-05-23)_
+  Both `build.yml` and `build-private-ml.yml` generate and attest per-push:
+  - **SLSA build provenance** via `actions/attest-build-provenance@v4.1.0`
+  - **CycloneDX-JSON SBOM** via `syft v1.44.0` against the image's RPM
+    database (extracted via `buildah unshare mount`), then
+    `actions/attest-sbom@v4.1.0`
 
   Attestations are signed via Sigstore using the workflow's short-lived
   OIDC token (no long-lived secret) and pushed to the registry as OCI
   referrers (`push-to-registry: true`), so customers can verify with
   `gh attestation verify` against the published artifact alone — no
-  GitHub API trust needed beyond the registry. Each image still carries
+  GitHub API trust needed beyond the registry. Each image carries
   three independent trust signals: cosign signature (item #2), SLSA
-  provenance, and SBOM. README and SECURITY.md document the
-  verification recipes. SPDX format deferred — can add in ~10 min if a
-  customer specifically asks.
+  provenance, and SBOM.
+
+  Scope tradeoff: SBOM covers RPM-installed packages only, not
+  arbitrary filesystem content. Audited at 2026-05-23 that every
+  third-party payload in `build_files/build.sh` and
+  `private-ml-install.sh` is installed via `dnf` — so coverage is
+  ~100% today. If a future change ever drops a binary into the image
+  outside of an RPM (e.g. `curl … | tar -C /usr/local/bin`), that
+  binary would be invisible to both the SBOM and the CVE scan. A
+  build-time "every file under /usr/bin must be owned by an RPM"
+  guard would close the gap — worth a follow-up TODO if non-RPM
+  payloads ever become a temptation.
+
+  README and SECURITY.md document the verification recipes. SPDX
+  format deferred — can add in ~10 min if a customer specifically asks.
 
 - [x] **9. Explicit firewalld zone config.** _(2026-05-22)_
   Default zone switched from inherited `FedoraWorkstation` (which
@@ -244,3 +253,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 17 done: wheel-requires-password asserted via `/etc/sudoers.d/99-emryk-wheel` (last-loaded drop-in overrides any future upstream NOPASSWD).
 - 2026-05-22 — **SECURITY-TODO is empty.** Backlog closed; ongoing hygiene runs via Renovate (#14), the auto-update timer (#7), and the scheduled key rotation (#12).
 - 2026-05-23 — items 3 (grype) and the SBOM half of 8 (syft + attest-sbom) re-homed from `build.yml`/`build-private-ml.yml` to a new `.github/workflows/nightly-scan.yml` running daily at 14:00 UTC. Per-push builds were getting killed by GHA's lost-comms watchdog during multi-GB bootc rootfs cataloging; nightly runs against the published GHCR image with `-vv` keepalive output. Per-push build provenance (cheap) still attested at push time; SBOM attestation now trails by up to 24h. SECURITY.md updated.
+- 2026-05-23 — pivoted again: nightly approach also failed (grype on the multi-GB OCI archive was being killed at ~10 min). Switched to RPM-database-only SBOM — extract `/usr/lib/sysimage/rpm` from the built image via `buildah unshare`, run `syft scan dir:./sbom-input` to emit CycloneDX from just the RPM cataloger (seconds), then `grype sbom:./sbom.cdx.json` to scan the SBOM (also seconds). Both moved back to per-push in `build.yml` + `build-private-ml.yml`; `nightly-scan.yml` deleted. Coverage tradeoff: RPM-installed packages only — audited build.sh/private-ml-install.sh to confirm every third-party payload is a dnf install (no curl|tar of vendor binaries). SBOM attestation back at push time. SECURITY.md updated.
