@@ -1,0 +1,129 @@
+---
+# SECURITY-TODO #3 (Grype CVE scan) and the SBOM half of SECURITY-TODO #8
+# (CycloneDX SBOM + attest-sbom) live here rather than in the per-push
+# build workflows. Stereoscope-based scanners can't catalog this
+# multi-GB Fedora bootc image inside a free GHA runner's resource
+# budget before the lost-comms watchdog kills the job; pushing the same
+# work into a nightly job lets it run async with verbose progress
+# output and lots of headroom.
+name: Nightly CVE scan + SBOM attestation
+on:
+  schedule:
+    # 14:00 UTC daily — well after the 10:05 UTC base-image rebuild
+    # settles, and after the private-ml variant chain finishes.
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+
+env:
+  IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
+  IMAGE_NAME: "${{ github.event.repository.name }}"
+  # Pinned for reproducibility; bumped by renovate (SECURITY-TODO #14).
+  GRYPE_VERSION: "v0.112.0"
+  SYFT_VERSION: "v1.44.0"
+
+concurrency:
+  # Serialize scans, but never cancel an in-flight scan for a newer one —
+  # losing nightly attestation coverage is worse than running two back to back.
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Scan ${{ matrix.tag }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+      # SECURITY-TODO #8: needed to push the SBOM attestation to GHCR.
+      attestations: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        tag:
+          - latest
+          - latest-private-ml
+
+    steps:
+      - name: Prepare environment
+        run: |
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # master as of 2025-10-10 (post-v9, untagged)
+
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image and resolve digest
+        id: pull
+        run: |
+          IMAGE_REF="${IMAGE_REGISTRY}/${IMAGE_NAME}:${{ matrix.tag }}"
+          podman pull "${IMAGE_REF}"
+          DIGEST=$(podman inspect --format '{{index .RepoDigests 0}}' "${IMAGE_REF}" | sed 's/.*@//')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${{ matrix.tag }} -> ${DIGEST}"
+
+      - name: Save image to OCI archive for scanning
+        run: |
+          # Saving to a local OCI archive avoids needing a podman REST
+          # socket for grype/syft (the podman: source requires one and
+          # GHA runners don't run it).
+          podman save --format oci-archive -o image.oci \
+            "${IMAGE_REGISTRY}/${IMAGE_NAME}:${{ matrix.tag }}"
+
+      - name: Install Grype
+        run: |
+          curl -fsSL "https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}/grype_${GRYPE_VERSION#v}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin grype
+          grype version
+
+      - name: Install Syft
+        run: |
+          curl -fsSL "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin syft
+          syft version
+
+      # -vv keeps continuous progress on stderr so the runner watchdog
+      # doesn't kill the job during a long catalog of a bootc rootfs.
+      - name: Scan image with Grype (report-only)
+        continue-on-error: true
+        run: |
+          grype "oci-archive:./image.oci" -vv \
+            --output table \
+            > grype-report.txt
+          {
+            echo "## Grype vulnerability scan — \`${IMAGE_NAME}:${{ matrix.tag }}\`"
+            echo ""
+            echo "Digest: \`${{ steps.pull.outputs.digest }}\`"
+            echo ""
+            echo '```'
+            cat grype-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          syft "oci-archive:./image.oci" -vv \
+            -o cyclonedx-json=sbom.cdx.json
+          {
+            echo "## SBOM"
+            echo ""
+            echo "Generated \`sbom.cdx.json\` ($(wc -c < sbom.cdx.json) bytes) for \`${IMAGE_NAME}@${{ steps.pull.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.pull.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true

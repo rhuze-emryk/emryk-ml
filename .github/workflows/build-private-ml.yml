@@ -22,9 +22,6 @@ env:
   IMAGE_NAME: "${{ github.event.repository.name }}"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "latest-private-ml"
-  # Pinned for reproducibility; bumped by renovate (SECURITY-TODO #14).
-  GRYPE_VERSION: "v0.112.0"
-  SYFT_VERSION: "v1.44.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -101,29 +98,9 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
           oci: false
 
-      # SECURITY-TODO #3: scan the freshly-built variant for known CVEs.
-      # Report-only — does not fail the build. The variant inherits all of
-      # the base image's CVEs plus anything Mullvad/Unsloth/NVIDIA layer adds.
-      - name: Install Grype
-        run: |
-          curl -fsSL "https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}/grype_${GRYPE_VERSION#v}_linux_amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin grype
-          grype version
-
-      - name: Scan image with Grype (report-only)
-        continue-on-error: true
-        run: |
-          grype "podman:localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
-            --output table \
-            --fail-on never \
-            | tee grype-report.txt
-          {
-            echo "## Grype vulnerability scan — \`${IMAGE_NAME}:${DEFAULT_TAG}\`"
-            echo ""
-            echo '```'
-            cat grype-report.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+      # SECURITY-TODO #3 (grype) and SECURITY-TODO #8 SBOM generation are
+      # deferred to .github/workflows/nightly-scan.yml — see the matching
+      # comment in build.yml for the resource-budget rationale.
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
@@ -161,32 +138,11 @@ jobs:
           COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
 
-      # SECURITY-TODO #8: SLSA build provenance + CycloneDX SBOM.
-      # See the corresponding block in build.yml for the full rationale.
-      - name: Install syft
-        run: |
-          curl -fsSL "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin syft
-          syft version
-
-      - name: Generate SBOM (CycloneDX)
-        run: |
-          syft "${IMAGE_REGISTRY}/${IMAGE_NAME}@${{ steps.push.outputs.digest }}" \
-            -o cyclonedx-json=sbom.cdx.json
-          echo "## SBOM" >> "$GITHUB_STEP_SUMMARY"
-          echo "Generated \`sbom.cdx.json\` ($(wc -c < sbom.cdx.json) bytes) for \`${IMAGE_NAME}@${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-
+      # SECURITY-TODO #8: SLSA build provenance only; SBOM half moves to
+      # nightly-scan.yml. See the matching comment in build.yml for context.
       - name: Attest build provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
-      - name: Attest SBOM
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
-        with:
-          subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          sbom-path: sbom.cdx.json
           push-to-registry: true

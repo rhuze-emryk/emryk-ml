@@ -20,9 +20,6 @@ env:
   IMAGE_NAME: "${{ github.event.repository.name }}"  # output image name, usually same as repo name
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"  # do not edit
   DEFAULT_TAG: "latest"
-  # Pinned for reproducibility; bumped by renovate (SECURITY-TODO #14).
-  GRYPE_VERSION: "v0.112.0"
-  SYFT_VERSION: "v1.44.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name}}-${{ inputs.stream_name }}
@@ -113,39 +110,13 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
           oci: false
 
-      # GHA runners don't run a podman REST socket, so syft/grype can't use
-      # the podman: source. Dump the freshly-built image to a local OCI
-      # archive so both scanners can read it via oci-archive: with no daemon.
-      - name: Save image to OCI archive for scanning
-        run: |
-          # redhat-actions/buildah-build writes to the runner user's
-          # rootless containers-storage, so invoke buildah without sudo.
-          buildah push "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
-            "oci-archive:./image.oci"
-
-      # SECURITY-TODO #3: scan the freshly-built image for known CVEs.
-      # Report-only — does not fail the build. Flip to a non-zero `--fail-on`
-      # once a triage process is in place. Runs on every build (PRs too) so
-      # reviewers see the impact of dependency changes.
-      - name: Install Grype
-        run: |
-          curl -fsSL "https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}/grype_${GRYPE_VERSION#v}_linux_amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin grype
-          grype version
-
-      - name: Scan image with Grype (report-only)
-        continue-on-error: true
-        run: |
-          grype "oci-archive:./image.oci" \
-            --output table \
-            | tee grype-report.txt
-          {
-            echo "## Grype vulnerability scan — \`${IMAGE_NAME}:${DEFAULT_TAG}\`"
-            echo ""
-            echo '```'
-            cat grype-report.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+      # SECURITY-TODO #3 (grype CVE scan) and SECURITY-TODO #8 SBOM generation
+      # are not run here: stereoscope-based scanners can't catalog this
+      # multi-GB Fedora bootc image inside a free GHA runner's resource
+      # budget before the lost-comms watchdog kills the job. Both are run
+      # asynchronously by .github/workflows/nightly-scan.yml against the
+      # published GHCR image. Build provenance (cheap) is still attested
+      # per-push below; the SBOM attestation moves to the nightly job.
 
       # Rechunk is a script that we use on Universal Blue to make sure there isnt a single huge layer when your image gets published.
       # This does not make your image faster to download, just provides better resumability and fixes a few errors.
@@ -217,46 +188,16 @@ jobs:
           COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
 
-      # SECURITY-TODO #8: SLSA build provenance + CycloneDX SBOM.
-      # Provenance: cryptographic statement, signed by Sigstore via this
-      # workflow's OIDC token, declaring that this exact image digest was
-      # built from this repo at this commit, by this workflow. SBOM: the
-      # complete list of packages syft finds in the image. Both ride along
-      # with the image as OCI referrers (`push-to-registry: true`) so a
-      # customer can verify without ever touching the GitHub API.
-      - name: Install syft
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        run: |
-          curl -fsSL "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin syft
-          syft version
-
-      - name: Generate SBOM (CycloneDX)
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        run: |
-          # SBOM the local OCI archive (saved earlier from buildah storage),
-          # not the just-pushed registry digest: pulling back the multi-GB
-          # image over the network exhausts the runner. attest-sbom below
-          # binds this SBOM to steps.push.outputs.digest, so the attestation
-          # still references the published artifact.
-          syft "oci-archive:./image.oci" \
-            -o cyclonedx-json=sbom.cdx.json
-          echo "## SBOM" >> "$GITHUB_STEP_SUMMARY"
-          echo "Generated \`sbom.cdx.json\` ($(wc -c < sbom.cdx.json) bytes) for \`${IMAGE_NAME}@${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-
+      # SECURITY-TODO #8: SLSA build provenance only. The SBOM half moved to
+      # nightly-scan.yml (see comment above the rechunk block). Provenance is
+      # a cryptographic statement, signed by Sigstore via this workflow's
+      # OIDC token, declaring that this exact image digest was built from
+      # this repo at this commit, by this workflow. Pushed as an OCI
+      # referrer so a customer can verify without touching the GitHub API.
       - name: Attest build provenance
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
-      - name: Attest SBOM
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
-        with:
-          subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          sbom-path: sbom.cdx.json
           push-to-registry: true
