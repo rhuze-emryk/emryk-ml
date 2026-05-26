@@ -45,6 +45,8 @@ jobs:
       contents: read
       packages: read
       id-token: write
+      # SLSA build-provenance attestation for the disk image artifacts.
+      attestations: write
 
     steps:
       - name: Prepare environment
@@ -87,6 +89,15 @@ jobs:
           chown: ${{ env.USER_UID }}:${{ env.USER_GID }}
           types: ${{ matrix.disk-type }}
           additional-args: --use-librepo=True
+
+      # SLSA build-provenance for each file the disk-image builder produced
+      # (qcow2/ISO + checksums). Sigstore-OIDC signed, no long-lived secret.
+      # Consumers verify with: gh attestation verify <file> --owner <org>
+      - name: Attest disk image build provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: '${{ steps.build.outputs.output-directory }}/*'
 
       - name: Upload disk images and Checksum to Job Artifacts
         if: inputs.upload-to-s3 != true && github.event_name != 'pull_request'
