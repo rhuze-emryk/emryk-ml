@@ -171,6 +171,14 @@ gh attestation download \
 
 These attestations are independent of the cosign signature — three different trust signals that any one of which can be verified without trusting the other two.
 
+Disk-image artifacts produced by `build-disk.yml` (qcow2, anaconda-iso) also ship SLSA build provenance, signed via the same Sigstore-OIDC path (no long-lived key). If you received a disk image out of band, verify it before booting:
+
+```bash
+gh attestation verify path/to/disk.qcow2 --owner rhuze-emryk
+```
+
+Disk images do not currently carry a separate SBOM attestation — their RPM contents are inherited from the already-attested container image used as the bib source.
+
 ## Tags
 
 | Tag | Description |
