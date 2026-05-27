@@ -26,13 +26,17 @@ new ones when threat-model assumptions change.
   ASN.1 signature error. Recovery if misconfigured: `bootc rollback` to
   pre-policy deployment.
 
-- [x] **3. Add vulnerability scanning to the build workflow.** _(2026-05-22; pivoted to SBOM-based scan 2026-05-23)_
+- [x] **3. Add vulnerability scanning to the build workflow.** _(2026-05-22; pivoted to SBOM-based scan 2026-05-23; payload coverage mechanically enforced 2026-05-27)_
   Grype scan back in `build.yml` + `build-private-ml.yml`, running
   per-push against the SBOM (`grype sbom:./sbom.cdx.json`) rather than
   re-cataloging the image. Fast (seconds), report-only. Initial attempt
   to scan the image directly blew past the free-runner lost-comms
   watchdog on this multi-GB Fedora bootc rootfs; nightly fallback was
   the first pivot, then SBOM-based scan let us put it back per-push.
+  The SBOM-only scope (RPM-installed packages) is now enforced at build
+  time by `build_files/verify-payload-rpm-owned.sh` — any non-allowlisted
+  unowned file under executable-payload dirs fails the build, so the
+  grype scan can't silently miss a vendor binary dropped outside dnf.
   Flip to `--fail-on critical` once a triage process is in place.
 
 - [x] **4. Cockpit reachable over Tailscale only.** _(2026-05-22; correctly closed by item #9)_
@@ -67,12 +71,18 @@ new ones when threat-model assumptions change.
   never auto-reboot — preserving long-running training jobs. README
   documents the cadence, opt-out, and rollback story.
 
-- [x] **8. SLSA build provenance + SBOM in CI.** _(2026-05-22; SBOM scope narrowed to RPM-only 2026-05-23)_
-  Both `build.yml` and `build-private-ml.yml` generate and attest per-push:
+- [x] **8. SLSA build provenance + SBOM in CI.** _(2026-05-22; SBOM scope narrowed to RPM-only 2026-05-23; disk-image provenance + RPM-payload guard 2026-05-27)_
+  `build.yml` and `build-private-ml.yml` generate and attest per-push:
   - **SLSA build provenance** via `actions/attest-build-provenance@v4.1.0`
   - **CycloneDX-JSON SBOM** via `syft v1.44.0` against the image's RPM
     database (extracted via `buildah unshare mount`), then
     `actions/attest-sbom@v4.1.0`
+
+  `build-disk.yml` also produces SLSA build provenance for each qcow2 /
+  ISO file it builds (no SBOM — disk artifacts inherit RPM contents from
+  the already-attested container image). The RPM-only SBOM scope is
+  enforced at build time by `build_files/verify-payload-rpm-owned.sh`
+  (see item 3).
 
   Attestations are signed via Sigstore using the workflow's short-lived
   OIDC token (no long-lived secret) and pushed to the registry as OCI
@@ -255,3 +265,7 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-23 — items 3 (grype) and the SBOM half of 8 (syft + attest-sbom) re-homed from `build.yml`/`build-private-ml.yml` to a new `.github/workflows/nightly-scan.yml` running daily at 14:00 UTC. Per-push builds were getting killed by GHA's lost-comms watchdog during multi-GB bootc rootfs cataloging; nightly runs against the published GHCR image with `-vv` keepalive output. Per-push build provenance (cheap) still attested at push time; SBOM attestation now trails by up to 24h. SECURITY.md updated.
 - 2026-05-23 — pivoted again: nightly approach also failed (grype on the multi-GB OCI archive was being killed at ~10 min). Switched to RPM-database-only SBOM — extract `/usr/lib/sysimage/rpm` from the built image via `buildah unshare`, run `syft scan dir:./sbom-input` to emit CycloneDX from just the RPM cataloger (seconds), then `grype sbom:./sbom.cdx.json` to scan the SBOM (also seconds). Both moved back to per-push in `build.yml` + `build-private-ml.yml`; `nightly-scan.yml` deleted. Coverage tradeoff: RPM-installed packages only — audited build.sh/private-ml-install.sh to confirm every third-party payload is a dnf install (no curl|tar of vendor binaries). SBOM attestation back at push time. SECURITY.md updated.
 - 2026-05-23 — addressed Node.js 20 deprecation warning on the build workflows. `redhat-actions/buildah-build` SHA-bumped to `061ffd31…` (post-v2.13 main commit that ships `node24` — upstream hadn't released a tagged version yet at audit time). `redhat-actions/push-to-registry` inline-replaced with `buildah push --digestfile=…` + `docker://…` — upstream had no Node 24 PR and the repo looked effectively unmaintained, so the supply-chain dependency was dropped entirely. `docker/login-action` (`@v4.1.0`) was already on `node24`; `actions/attest-sbom` (also Node 20 deprecation) was migrated to `actions/attest@v4.1.0` in the same day's commits. Per-push builds re-verified post-change: both images push, sign, attest, and the SBOM attestation still returns 2200+ components.
+- 2026-05-26 — `build-disk.yml` audit. Confirmed Node 20→24 clean (checkout@v6, upload-artifact@v7.0.1). Aligned `ublue-os/remove-unwanted-software` pin across all three workflows (`954a816`). Added SLSA build-provenance to the disk-image artifacts via `actions/attest-build-provenance@v4.1.0` over the bib output dir (`81c70f1`) — Sigstore-OIDC signed, no new long-lived secret; verified 2 subjects attested per matrix leg. Cosign signing for disk images deliberately deferred (would broaden `COSIGN_PRIVATE_KEY` to a third workflow; no scheduled distribution stream yet to justify).
+- 2026-05-26 — discovered `build-disk.yml` had been silently broken since template-time (no one had ever dispatched it). ISO leg referenced `./disk_config/iso.toml` which didn't exist (template was later split into iso-kde / iso-gnome); fixed to point at `iso-kde.toml` and removed unused `iso-gnome.toml`. qcow2 leg failed with `missing required info: DefaultRootFs` because Fedora bootc base images don't declare a default rootfs type; fixed by passing `--rootfs btrfs` to bib (matches Kinoite/Ublue convention, enables snapshot/rollback). Also fixed `iso-kde.toml`'s kickstart `bootc switch` URL — still pointed at the upstream `ublue-os/image-template`, would have pivoted any installed system to the wrong image (`8df4742`).
+- 2026-05-27 — item 3/item 8 strengthened: shipped `build_files/verify-payload-rpm-owned.sh`, invoked from both `Containerfile` and `Containerfile.private-ml` immediately before `bootc container lint` (PR #4, `eb91326`). Walks `/usr/{bin,sbin,libexec,lib,lib64,local}` and `/opt`, batches the file list through `xargs -L 500 rpm -qf`, fails the build on any non-allowlisted unowned file. The RPM-only SBOM scope (previously a manual discipline depending on every payload being `dnf5 install`d in `build.sh`/`private-ml-install.sh`) is now mechanically enforced. Allowlist covers bootc/rpm-ostree machinery, fc-cache output, systemd post-install symlinks, atomic-desktop dracut/bootupd/tmpfiles, glibc nss_db, Broadcom firmware NVRAM mappings, and two known false-positives (`/usr/bin/nvidia-container-toolkit`, `/usr/libexec/fedora-kinoite-plasmalogin-workaround` — both verifiably dnf-installed upstream but `rpm -qf` misreports in this image type; possible same class as the bug that made `rpm -qal` report 5000+ phantom-unowned files when the guard initially tried that approach).
+- 2026-05-27 — `build-private-ml.yml` got a `pull_request` trigger (PR #5, `e913494`). Path filter mirrors the existing push trigger plus `build_files/verify-payload-rpm-owned.sh`, so guard-script or variant-script changes get variant CI before merge instead of only post-merge via `workflow_run`. Closes the gap where PR #4 itself only exercised the new guard against the base image, relying on luck that the allowlist also covered private-ml-install.sh output (it did).
