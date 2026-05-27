@@ -25,4 +25,10 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
     /ctx/build.sh
 
+# SECURITY-TODO #3/#8: every payload file must be RPM-owned so the
+# RPM-only SBOM (build.yml syft step) captures it. Fails the build on
+# any unowned file outside the script's allowlist.
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    bash /ctx/verify-payload-rpm-owned.sh
+
 RUN bootc container lint
