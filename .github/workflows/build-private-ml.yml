@@ -8,6 +8,19 @@ on:
     paths:
       - 'Containerfile.private-ml'
       - 'build_files/private-ml-install.sh'
+      - 'build_files/verify-payload-rpm-owned.sh'
+      - '.github/workflows/build-private-ml.yml'
+  # Variant CI on PRs that touch variant-relevant files. The base image runs
+  # on every PR via build.yml; this catches variant-only regressions (e.g.
+  # the non-RPM payload guard failing against private-ml-install.sh output)
+  # before merge, instead of post-merge via workflow_run.
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'Containerfile.private-ml'
+      - 'build_files/private-ml-install.sh'
+      - 'build_files/verify-payload-rpm-owned.sh'
       - '.github/workflows/build-private-ml.yml'
   # Re-build the variant whenever the base image is re-built so they stay in sync.
   workflow_run:
