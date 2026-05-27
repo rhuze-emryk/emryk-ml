@@ -38,24 +38,35 @@ readonly ALLOWLIST_REGEX=(
   '^/usr/lib/modprobe\.d/blacklist-nouveau\.conf$'
 )
 
-rpm -qal | LC_ALL=C sort -u > /tmp/rpm-owned.txt
-
+# Enumerate candidate files.
 find "${PAYLOAD_DIRS[@]}" \( -type f -o -type l \) -print 2>/dev/null \
   | LC_ALL=C sort -u > /tmp/payload-files.txt
 
-comm -23 /tmp/payload-files.txt /tmp/rpm-owned.txt > /tmp/unowned-raw.txt
-
+# Pre-filter via allowlist to avoid asking rpm about paths we already accept.
 while IFS= read -r f; do
   for re in "${ALLOWLIST_REGEX[@]}"; do
     [[ $f =~ $re ]] && continue 2
   done
   printf '%s\n' "$f"
-done < /tmp/unowned-raw.txt > /tmp/unowned.txt
+done < /tmp/payload-files.txt > /tmp/payload-to-query.txt
+
+# Ask rpm who owns each file, in batches. rpm -qf prints either the package
+# nvra (owned) or "file <path> is not owned by any package" (unowned).
+# stderr is folded in to capture "error: file X: No such file ..." for broken
+# symlinks; awk discards those by matching only the "is not owned" form.
+xargs -r -a /tmp/payload-to-query.txt -L 500 rpm -qf 2>&1 \
+  | awk '/ is not owned by any package$/ {
+      sub(/^file /, ""); sub(/ is not owned by any package$/, ""); print
+    }' \
+  > /tmp/unowned.txt
 
 unowned_count=$(wc -l < /tmp/unowned.txt)
+total_scanned=$(wc -l < /tmp/payload-files.txt)
+total_queried=$(wc -l < /tmp/payload-to-query.txt)
 
 if (( unowned_count > 0 )); then
-  echo >&2 "ERROR: ${unowned_count} payload files are not owned by any RPM:"
+  echo >&2 "ERROR: ${unowned_count} payload files are not owned by any RPM"
+  echo >&2 "  (scanned ${total_scanned} total; ${total_queried} queried after allowlist):"
   sed >&2 's/^/  /' /tmp/unowned.txt
   echo >&2 ""
   echo >&2 "These would be missed by the RPM-only SBOM. Either install via dnf,"
@@ -64,4 +75,4 @@ if (( unowned_count > 0 )); then
   exit 1
 fi
 
-echo "OK: all $(wc -l < /tmp/payload-files.txt) payload files are RPM-owned."
+echo "OK: all ${total_queried} non-allowlisted payload files (of ${total_scanned} scanned) are RPM-owned."
