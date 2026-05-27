@@ -54,11 +54,17 @@ done < /tmp/payload-files.txt > /tmp/payload-to-query.txt
 # nvra (owned) or "file <path> is not owned by any package" (unowned).
 # stderr is folded in to capture "error: file X: No such file ..." for broken
 # symlinks; awk discards those by matching only the "is not owned" form.
+#
+# `|| true` is load-bearing: rpm -qf exits 1 whenever any queried file is
+# unowned, which under xargs propagates as exit 123. We don't care about rpm's
+# exit status — we only care about its output. Splitting collection from
+# parsing keeps `set -e` / pipefail happy.
 xargs -r -a /tmp/payload-to-query.txt -L 500 rpm -qf 2>&1 \
-  | awk '/ is not owned by any package$/ {
-      sub(/^file /, ""); sub(/ is not owned by any package$/, ""); print
-    }' \
-  > /tmp/unowned.txt
+  > /tmp/rpm-qf-output.txt || true
+
+awk '/ is not owned by any package$/ {
+  sub(/^file /, ""); sub(/ is not owned by any package$/, ""); print
+}' /tmp/rpm-qf-output.txt > /tmp/unowned.txt
 
 unowned_count=$(wc -l < /tmp/unowned.txt)
 total_scanned=$(wc -l < /tmp/payload-files.txt)
