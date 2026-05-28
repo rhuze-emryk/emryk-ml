@@ -48,7 +48,7 @@ Reboot to apply.
 | Tag | Description |
 |---|---|
 | `:latest` | Default image. |
-| `:latest-private-ml` | `:latest` plus [Mullvad VPN](https://mullvad.net/) daemon and [Unsloth Studio](https://unsloth.ai/docs/new/studio) preconfigured. Built manually on demand. |
+| `:latest-private-ml` | `:latest` plus [Mullvad VPN](https://mullvad.net/) daemon preconfigured. Built manually on demand. |
 
 Switch between variants with `bootc switch`; rollback to the previous deployment with `sudo bootc rollback`. `/var` and `/home` are preserved across switches.
 
@@ -63,7 +63,7 @@ mullvad connect
 
 Or use the Mullvad GUI app, also installed.
 
-**Unsloth Studio.** Not started automatically. Launch it from the application menu ("Start Unsloth Studio") or run `/usr/libexec/emryk/launch-unsloth-studio.sh`. The first launch pulls the `docker.io/unsloth/unsloth` image (multi-GB) and can take several minutes; subsequent launches are fast. The UI binds to `http://127.0.0.1:8888` only — not exposed on the LAN. Persistent state lives in the Podman named volume `unsloth-studio-data`.
+**Unsloth Studio.** No longer preinstalled. The rootful auto-launching Quadlet that earlier builds shipped (root container, moving `:latest` tag, unauthenticated loopback bind) was removed for being the wrong trade-off in a closed-by-default image. The supported replacement is the rootless recipe at [`docs/recipes/unsloth-studio.md`](./docs/recipes/unsloth-studio.md) — a `podman run` under your user with CDI GPU passthrough.
 
 ## Remote management
 
@@ -186,7 +186,7 @@ Disk images do not currently carry a separate SBOM attestation — their RPM con
 | `latest` | Current tested release |
 | `YYYYMMDD` | Date-stamped build |
 | `latest.YYYYMMDD` | Same build, aliased |
-| `latest-private-ml` | `latest` + Mullvad VPN + Unsloth Studio (manual dispatch) |
+| `latest-private-ml` | `latest` + Mullvad VPN (manual dispatch) |
 | `latest-private-ml.YYYYMMDD` | Date-stamped private-ml build |
 
 PRs produce a SHA-tagged image that is not pushed to the registry.
@@ -211,7 +211,7 @@ just build-qcow2
 Containerfile                       Multi-stage build: akmods-nvidia-open → kinoite-main
 Containerfile.private-ml            private-ml variant: FROM :latest + install layer
 build_files/build.sh                Package installs, repo setup, service config
-build_files/private-ml-install.sh   Mullvad + NVIDIA container toolkit + Unsloth Studio Quadlet
+build_files/private-ml-install.sh   Mullvad + NVIDIA container toolkit
 .github/workflows/
   build.yml                         Build, push to GHCR, sign with cosign
   build-private-ml.yml              Manual dispatch: build :latest-private-ml

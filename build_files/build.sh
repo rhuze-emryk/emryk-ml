@@ -80,7 +80,7 @@ EOF
 # ghcr.io/rhuze-emryk. After a user `bootc switch`es to a build that contains
 # these files, every subsequent pull from our namespace must verify against
 # the public key shipped at /etc/pki/containers/rhuze-emryk.pub or the pull
-# is rejected. Other registries (Flathub, docker.io for unsloth, ublue-os
+# is rejected. Other registries (Flathub, docker.io, ublue-os
 # bases) continue to use the default insecureAcceptAnything so they keep
 # working unchanged. Recovery from a misconfiguration is `bootc rollback` to
 # the pre-policy deployment.
