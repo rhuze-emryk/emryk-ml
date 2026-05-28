@@ -186,7 +186,7 @@ Disk images do not currently carry a separate SBOM attestation — their RPM con
 | `latest` | Current tested release |
 | `YYYYMMDD` | Date-stamped build |
 | `latest.YYYYMMDD` | Same build, aliased |
-| `latest-private-ml` | `latest` + Mullvad VPN (manual dispatch) |
+| `latest-private-ml` | `latest` + Mullvad VPN |
 | `latest-private-ml.YYYYMMDD` | Date-stamped private-ml build |
 
 PRs produce a SHA-tagged image that is not pushed to the registry.
@@ -211,10 +211,10 @@ just build-qcow2
 Containerfile                       Multi-stage build: akmods-nvidia-open → kinoite-main
 Containerfile.private-ml            private-ml variant: FROM :latest + install layer
 build_files/build.sh                Package installs, repo setup, service config
-build_files/private-ml-install.sh   Mullvad + NVIDIA container toolkit
+build_files/private-ml-install.sh   Mullvad VPN install layer (variant-only)
 .github/workflows/
   build.yml                         Build, push to GHCR, sign with cosign
-  build-private-ml.yml              Manual dispatch: build :latest-private-ml
+  build-private-ml.yml              Build :latest-private-ml (push/PR + chained on base rebuild)
   build-disk.yml                    Disk image builds (qcow2, raw, iso)
 cosign.pub                          Public signing key
 renovate.json                       Renovate config: keeps action SHAs, base-image digests, and tool versions current
