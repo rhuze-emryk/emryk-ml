@@ -62,42 +62,38 @@ new ones when threat-model assumptions change.
   Follow-up worth considering: also vendor the GPG public key referenced by
   `gpgkey=` so the import path is fully offline.
 
-- [ ] **18. Harden the Unsloth Studio quadlet.**
-  `build_files/private-ml-install.sh` ships
-  `Image=docker.io/unsloth/unsloth:latest` with no digest pin, and
-  `containers-policy.json`'s default is `insecureAcceptAnything` for
-  docker.io — so first launch pulls an unverified third-party image and
-  runs it as root with `AddDevice=nvidia.com/gpu=all` and a `:/root`
-  volume. The host port is bound to `127.0.0.1:8888` and Studio has no
-  auth: on a workstation with multiple shell users (or distrobox
-  tenants) every local user can drive a root-privileged container with
-  full GPU access. SECURITY.md disclaims customer-supplied software, but
-  the variant ships the image *and* a one-click launcher, so this lives
-  closer to "we shipped it." Mitigations:
-  - Pin `Image=docker.io/unsloth/unsloth@sha256:<digest>` and add a
-    Renovate custom manager so the digest tracks upstream.
-  - Document in README that `127.0.0.1` means "trusts every local user
-    on this host," not "trusts you."
-  - Consider whether the polkit rule in `50-unsloth-studio.rules` should
-    require a password prompt instead of granting `wheel` silent start.
-  Closing condition: digest pinned, README note added, polkit decision
-  recorded.
+- [x] **18. Harden the Unsloth Studio quadlet.** _(2026-05-28 — obsoleted by removal)_
+  Original concern: the variant shipped a rootful Quadlet pulling
+  `docker.io/unsloth/unsloth:latest` with no digest pin, plus a polkit
+  rule granting `wheel`-group silent start of the resulting root
+  container. On any workstation with multiple local users (or distrobox
+  tenants) every local user could drive a root-privileged container
+  with full GPU access via the `127.0.0.1:8888` no-auth UI.
 
-- [ ] **19. Vendor the Mullvad + NVIDIA container-toolkit repo files.**
-  `build_files/private-ml-install.sh` still `curl`s
-  `repository.mullvad.net/.../mullvad.repo` and
-  `nvidia.github.io/.../nvidia-container-toolkit.repo` into
-  `/etc/yum.repos.d/` at build time. Each `.repo` file chains to a
-  `gpgkey=` URL inside that same vendor CDN, so a CDN-level tamper at
-  build time could substitute both `baseurl` and `gpgkey` atomically
-  before `dnf` ever gets a chance to verify a signature. This is the
-  exact threat #6 solved for Tailscale by vendoring. For symmetry,
-  check in `build_files/mullvad.repo` and
-  `build_files/nvidia-container-toolkit.repo` with the current upstream
-  contents, swap the `curl` calls for `cp`s, and let Renovate watch the
-  upstream URLs for drift.
-  Closing condition: both `.repo` files committed under `build_files/`,
-  install script no longer curls them, Renovate watches drift.
+  Resolved by removing the Quadlet entirely (PR #11) rather than
+  hardening it: the closed-by-default principle judged the convenience
+  trade-off (auto-launching, polkit-greased, root-privileged container)
+  wrong for an image of this shape. Unsloth Studio is now documented as
+  a rootless recipe at `docs/recipes/unsloth-studio.md` (PR #12) — a
+  user-scope `podman run` with CDI GPU passthrough, no rootful surface,
+  no polkit rule, no preconfigured `:latest` pull. Customers who want
+  the old auto-start convenience can drop a user-Quadlet under
+  `~/.config/containers/systemd/` — documented in the recipe.
+
+- [x] **19. Vendor the Mullvad + NVIDIA container-toolkit repo files.** _(2026-05-28)_
+  Both files checked in under `build_files/` (PR #14). The variant
+  install script and `build.sh` now `cp` from `/ctx/` instead of
+  `curl`-piping from the vendor CDNs (variant patched in PR #14, base
+  in PR #16). Closes the CDN-tamper window that #6 solved for Tailscale.
+
+  Follow-up worth considering: Renovate doesn't natively watch a remote
+  `.repo` URL for drift. Options to keep an eye on upstream changes:
+  a tiny scheduled GitHub Actions workflow that diff-checks each
+  vendored file against its source URL and opens an issue on drift,
+  or a `regexManager` in `renovate.json` with the URL pinned in a
+  comment for manual refresh. Not blocking — drift is a slow-moving
+  concern and the gpgcheck=1 still verifies the actual package
+  signature at install time.
 
 ## Medium priority — hardening and defense in depth
 
