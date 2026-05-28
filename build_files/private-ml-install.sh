@@ -4,21 +4,28 @@ set -ouex pipefail
 
 # ---------------------------------------------------------------------------
 # Mullvad VPN
-# Official Fedora repo. The repo file ships gpgcheck=1 + gpgkey URL, so the
-# package signature is verified against Mullvad's published key.
+# Vendored from https://repository.mullvad.net/rpm/stable/mullvad.repo and
+# checked into build_files/. Freezes baseurl + gpgkey URLs at a state we have
+# reviewed — a CDN-level compromise that swaps either field cannot affect us
+# without a PR landing in this repo first. The repo file ships gpgcheck=1
+# with a gpgkey URL, so the package signature is still verified against
+# Mullvad's published key at install time.
 # Ref: https://mullvad.net/en/help/install-mullvad-app-linux
 # ---------------------------------------------------------------------------
-curl -fsSL https://repository.mullvad.net/rpm/stable/mullvad.repo \
-    -o /etc/yum.repos.d/mullvad.repo
+cp /ctx/mullvad.repo /etc/yum.repos.d/mullvad.repo
 
 # ---------------------------------------------------------------------------
 # NVIDIA Container Toolkit
-# Required so Podman can pass the host GPU into containers via CDI. The CDI
-# spec itself is generated at first boot (see nvidia-cdi-generate.service)
-# because nvidia-ctk has to inspect the live kernel modules.
+# Vendored from
+#   https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
+# and checked into build_files/ — same threat model as the Mullvad repo
+# above. The vendored file includes both the stable (enabled) and
+# experimental (disabled) sections verbatim from upstream; only the stable
+# section is consumed by the dnf install below. The CDI spec itself is
+# generated at first boot (see nvidia-cdi-generate.service) because
+# nvidia-ctk has to inspect the live kernel modules.
 # ---------------------------------------------------------------------------
-curl -fsSL https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
-    -o /etc/yum.repos.d/nvidia-container-toolkit.repo
+cp /ctx/nvidia-container-toolkit.repo /etc/yum.repos.d/nvidia-container-toolkit.repo
 
 # On bootc images /opt is a symlink to /var/opt, and /var/opt does not exist
 # in the build container. Any RPM that writes under /opt (Mullvad installs to
