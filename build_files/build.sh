@@ -13,6 +13,16 @@ echo -e "blacklist nouveau\noptions nouveau modeset=0" \
 # without a PR landing in this repo first. (SECURITY-TODO #6)
 cp /ctx/tailscale.repo /etc/yum.repos.d/tailscale.repo
 
+# NVIDIA Container Toolkit
+# Required so Podman can pass the host GPU into containers via CDI. The CDI
+# spec itself is generated at first boot (see nvidia-cdi-generate.service)
+# because nvidia-ctk has to inspect the live kernel modules. The base image
+# already ships the NVIDIA kernel modules via akmods-nvidia-open, so the
+# toolkit completes the host-to-container GPU path for distrobox and any
+# other rootless podman workload.
+curl -fsSL https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
+    -o /etc/yum.repos.d/nvidia-container-toolkit.repo
+
 dnf5 install -y \
     btop \
     cockpit \
@@ -25,6 +35,7 @@ dnf5 install -y \
     htop \
     kde-gtk-config \
     neovim \
+    nvidia-container-toolkit \
     podman-compose \
     podman-docker \
     tailscale \
@@ -57,6 +68,26 @@ Type=oneshot
 ExecStart=/usr/libexec/emryk/install-flatpaks.sh
 RemainAfterExit=yes
 StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# NVIDIA CDI spec generator
+# Runs at every boot so the spec stays in sync with the running driver after
+# a base-image rebase. nvidia-ctk inspects loaded modules, so this can only
+# run on a live system — not at image build time.
+cat > /etc/systemd/system/nvidia-cdi-generate.service <<'EOF'
+[Unit]
+Description=Generate NVIDIA CDI spec for Podman GPU passthrough
+Documentation=https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/cdi-support.html
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/mkdir -p /etc/cdi
+ExecStart=/usr/bin/nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -153,6 +184,7 @@ systemctl enable \
     cockpit.socket \
     emryk-install-flatpaks.service \
     flatpak-system-update.timer \
+    nvidia-cdi-generate.service \
     tailscaled.service
 
 # SECURITY-TODO #11: the system podman.socket runs as root and is the
