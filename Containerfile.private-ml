@@ -4,7 +4,7 @@ COPY build_files /
 # Pinned by digest. The chained workflow_run rebuild will produce a byte-equal
 # image until this pin is bumped — by design, so the variant cannot drift away
 # from a known-reviewed base. Bump deliberately (eventually via renovate).
-FROM ghcr.io/rhuze-emryk/emryk-ml:latest@sha256:c582ec3c594903f29c1ee5cb00941fc74766e17b987d4001a4934c146dead58b
+FROM ghcr.io/rhuze-emryk/emryk-ml:latest@sha256:a1b15647e5fdf9a17a1e3fdcae88ce2d0178a66a059d0bbec37bd30345e3d3b0
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \

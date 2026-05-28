@@ -14,14 +14,21 @@ echo -e "blacklist nouveau\noptions nouveau modeset=0" \
 cp /ctx/tailscale.repo /etc/yum.repos.d/tailscale.repo
 
 # NVIDIA Container Toolkit
-# Required so Podman can pass the host GPU into containers via CDI. The CDI
-# spec itself is generated at first boot (see nvidia-cdi-generate.service)
-# because nvidia-ctk has to inspect the live kernel modules. The base image
-# already ships the NVIDIA kernel modules via akmods-nvidia-open, so the
-# toolkit completes the host-to-container GPU path for distrobox and any
-# other rootless podman workload.
-curl -fsSL https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
-    -o /etc/yum.repos.d/nvidia-container-toolkit.repo
+# Vendored from
+#   https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
+# and checked into build_files/ — same threat model as the Mullvad and
+# tailscale repo files: a CDN-level compromise that swaps either field
+# cannot affect us without a PR landing in this repo first. The vendored
+# file includes both the stable (enabled) and experimental (disabled)
+# sections verbatim from upstream; only the stable section is consumed by
+# the dnf install below. Required so Podman can pass the host GPU into
+# containers via CDI; the base image already ships the NVIDIA kernel
+# modules via akmods-nvidia-open, so the toolkit completes the
+# host-to-container GPU path for distrobox and any other rootless podman
+# workload. The CDI spec itself is generated at first boot (see
+# nvidia-cdi-generate.service) because nvidia-ctk has to inspect the live
+# kernel modules.
+cp /ctx/nvidia-container-toolkit.repo /etc/yum.repos.d/nvidia-container-toolkit.repo
 
 dnf5 install -y \
     btop \
