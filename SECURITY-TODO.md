@@ -86,14 +86,32 @@ new ones when threat-model assumptions change.
   `curl`-piping from the vendor CDNs (variant patched in PR #14, base
   in PR #16). Closes the CDN-tamper window that #6 solved for Tailscale.
 
-  Follow-up worth considering: Renovate doesn't natively watch a remote
-  `.repo` URL for drift. Options to keep an eye on upstream changes:
-  a tiny scheduled GitHub Actions workflow that diff-checks each
-  vendored file against its source URL and opens an issue on drift,
-  or a `regexManager` in `renovate.json` with the URL pinned in a
-  comment for manual refresh. Not blocking — drift is a slow-moving
-  concern and the gpgcheck=1 still verifies the actual package
-  signature at install time.
+  Drift detection follow-up landed as `.github/workflows/vendor-drift-watch.yml`
+  (PR #18): weekly fetch + diff of each vendored file vs. its upstream
+  URL, opens/updates a GitHub issue if drift is detected.
+
+  **Per-vendor gpgcheck variance** (correction to an earlier claim in
+  this entry): the closing-window framing said "the gpgcheck=1 still
+  verifies the actual package signature at install time." That is true
+  for `mullvad.repo` and `tailscale.repo` (both `gpgcheck=1`) but
+  **false** for `nvidia-container-toolkit.repo`, which mirrors upstream's
+  `gpgcheck=0` — only repodata metadata is signature-checked, not the
+  RPMs themselves. Closing the gap is tracked separately in #24.
+
+- [ ] **24. Close the `gpgcheck=0` gap on vendored `nvidia-container-toolkit.repo`.**
+  `build_files/nvidia-container-toolkit.repo` mirrors upstream's
+  `gpgcheck=0` (only `repo_gpgcheck=1`). RPMs from this repo are
+  installed without package-signature verification, so an attacker who
+  serves a malicious nvidia-container-toolkit RPM via a compromised
+  mirror or TLS-MITM (with a CA the build trusts) lands the package
+  unchallenged. Decision needed: either (a) flip the vendored copy to
+  `gpgcheck=1` — vendoring is exactly the mechanism that buys us the
+  freedom to deviate from upstream; this would surface any genuinely
+  unsigned package as a build-time failure — or (b) accept upstream's
+  posture and amend SECURITY.md to be explicit that this repo has a
+  metadata-only trust boundary.
+  Closing condition: a decision documented in SECURITY.md and reflected
+  in the vendored file.
 
 ## Medium priority — hardening and defense in depth
 
@@ -203,6 +221,43 @@ new ones when threat-model assumptions change.
   Closing condition: triage process documented in SECURITY.md and the
   workflow blocks on critical CVEs.
 
+- [ ] **25. Remove redundant `nvidia-container-toolkit` install + CDI service from base `build.sh`.**
+  PR #13 added `nvidia-container-toolkit` to `build_files/build.sh`'s
+  dnf list and shipped a new `/etc/systemd/system/nvidia-cdi-generate.service`
+  heredoc that runs `nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml`
+  at boot. **Upstream `ublue-os/akmods` `nvidia-install.sh` already does
+  both** — its `NVIDIA_RPMS` array installs `nvidia-container-toolkit`,
+  and `ublue-os-nvidia-addons` ships `/usr/lib/systemd/system/ublue-nvctk-cdi.service`
+  enabled via preset (and explicitly via `systemctl enable` in the same
+  upstream script). Result on every base boot: two oneshot services
+  race to write the same `/etc/cdi/nvidia.yaml`. Output is deterministic
+  so the file ends up correct today, but a future change to either unit
+  silently loses the race depending on systemd parallelization. The
+  duplicate dnf install is a no-op.
+  Closing condition: drop the `nvidia-container-toolkit` line from
+  `build.sh`'s `dnf5 install`, drop the `nvidia-cdi-generate.service`
+  heredoc and its `systemctl enable`, drop the vendored
+  `nvidia-container-toolkit.repo` `cp` and the file itself if no
+  consumer remains (or keep them for vendor-drift-watch coverage).
+  PR #13's stated benefit ("distrobox-GPU on `:latest`") was already
+  provided by upstream akmods before the PR; this item un-does the
+  net-no-op work.
+
+- [ ] **26. Extend `build-private-ml.yml` path filter to include vendored `.repo` files.**
+  Push and pull_request triggers in `.github/workflows/build-private-ml.yml`
+  match on `Containerfile.private-ml`, `build_files/private-ml-install.sh`,
+  `build_files/verify-payload-rpm-owned.sh`, and the workflow file
+  itself — but **not** `build_files/mullvad.repo` (the vendored file
+  the variant install script `cp`s from `/ctx`). A drift-refresh PR
+  prompted by `vendor-drift-watch.yml` editing only `mullvad.repo`
+  does not trigger variant CI; regressions like a missing `gpgkey=`
+  line escape PR review and only surface post-merge via the chained
+  `workflow_run` rebuild after `:latest` has already been built and
+  pushed.
+  Closing condition: `build_files/mullvad.repo` (and
+  `build_files/nvidia-container-toolkit.repo`, if it survives #25) in
+  both the push and pull_request `paths:` lists.
+
 ## Low priority — worth doing eventually
 
 - [x] **13. SECURITY.md documenting the threat model.** _(2026-05-22)_
@@ -295,6 +350,45 @@ new ones when threat-model assumptions change.
   concurrency behavior. Either delete the references or declare the
   inputs explicitly.
 
+- [ ] **27. Polish `vendor-drift-watch.yml`.**
+  Three small papercuts surfaced in the post-PR-#18 review of the new
+  drift-watch workflow:
+  - **Diff exit-code handling**: `if diff … ; then drifted=false ; else drifted=true ; fi`
+    treats exit code 2 (file missing/unreadable) the same as exit
+    code 1 (drift detected), producing an empty-body issue instead
+    of failing the run loudly. Distinguish them with a `case $?`.
+  - **Idempotent issue lookup**: `gh issue list --search 'in:title "${title}"'`
+    relies on GitHub's tokenized issue search and `--jq '.[0].number'`
+    blindly takes the top hit. Once multiple drift issues coexist
+    (titles share `.repo drifted from upstream`), the dedup query
+    may return the wrong issue. Add a `vendor-drift` label on
+    creation and filter by that label with an exact `select(.title == $title)`
+    jq predicate.
+  - **Cron-time comment reversed**: comment claims `13:00 UTC = 09:00 ET (winter) / 08:00 ET (summer)`,
+    but 13:00 UTC is 08:00 EST (winter) and 09:00 EDT (summer) —
+    one-line comment fix.
+
+- [ ] **28. Use `install -m 0644` for vendored `.repo` copies.**
+  `build.sh` `cp /ctx/nvidia-container-toolkit.repo …` and
+  `private-ml-install.sh` `cp /ctx/mullvad.repo …` use bare `cp`,
+  while every other config drop in the same scripts uses
+  `install -m 0644` (cosign.pub, policy.json, registries.d, firewalld
+  zones, selinux config, sudoers, bootc service drop-in). Fine today
+  under Fedora's default 0022 umask; latent fragility if a future
+  builder hardening sets a tighter umask. One-line cleanup for
+  consistency.
+
+- [ ] **29. Tighten path filters so docs-only PRs don't trigger full image builds.**
+  `build.yml`'s push `paths-ignore` only excludes `**/README.md`, and
+  its `pull_request` trigger has no path filter at all — so any PR
+  touching `SECURITY-TODO.md`, `ONBOARDING.md`, `SECURITY.md`,
+  `KEY-POLICY.md`, or `docs/**` kicks off a full multi-GB bootc image
+  build + grype + syft + cosign + attestations (~30–60 min on
+  ubuntu-24.04, observed first-hand on PR #17 which was
+  SECURITY-TODO-only). Add a `paths-ignore` block to the
+  `pull_request` trigger and extend the push one. No security
+  improvement; pure CI-budget conservation.
+
 ---
 
 ## Deliberately out of scope
@@ -338,3 +432,5 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-27 — item 3/item 8 strengthened: shipped `build_files/verify-payload-rpm-owned.sh`, invoked from both `Containerfile` and `Containerfile.private-ml` immediately before `bootc container lint` (PR #4, `eb91326`). Walks `/usr/{bin,sbin,libexec,lib,lib64,local}` and `/opt`, batches the file list through `xargs -L 500 rpm -qf`, fails the build on any non-allowlisted unowned file. The RPM-only SBOM scope (previously a manual discipline depending on every payload being `dnf5 install`d in `build.sh`/`private-ml-install.sh`) is now mechanically enforced. Allowlist covers bootc/rpm-ostree machinery, fc-cache output, systemd post-install symlinks, atomic-desktop dracut/bootupd/tmpfiles, glibc nss_db, Broadcom firmware NVRAM mappings, and two known false-positives (`/usr/bin/nvidia-container-toolkit`, `/usr/libexec/fedora-kinoite-plasmalogin-workaround` — both verifiably dnf-installed upstream but `rpm -qf` misreports in this image type; possible same class as the bug that made `rpm -qal` report 5000+ phantom-unowned files when the guard initially tried that approach).
 - 2026-05-27 — `build-private-ml.yml` got a `pull_request` trigger (PR #5, `e913494`). Path filter mirrors the existing push trigger plus `build_files/verify-payload-rpm-owned.sh`, so guard-script or variant-script changes get variant CI before merge instead of only post-merge via `workflow_run`. Closes the gap where PR #4 itself only exercised the new guard against the base image, relying on luck that the allowlist also covered private-ml-install.sh output (it did).
 - 2026-05-28 — **Backlog reopened** with items 18–23 from a full-codebase security review. Top concern is #18 (Unsloth Studio quadlet: unpinned `:latest` docker.io pull, root-privileged container with full GPU, no-auth loopback bind that trusts every local user). #19 vendors the last two curl-piped vendor `.repo` files. #20 follows through on #3's "flip to `--fail-on critical` once triage exists." #21–23 are CI/registry hygiene.
+- 2026-05-28 — items 18 + 19 closed via the private-ml pivot (PRs #11–#16) and the drift-watch workflow (PR #18). Item 18 obsoleted by removal (Quadlet deleted in PR #11; rootless recipe at `docs/recipes/unsloth-studio.md` in PR #12). Item 19 closed by vendoring `build_files/mullvad.repo` + `build_files/nvidia-container-toolkit.repo` (PR #14) and converting the install scripts to `cp` (PRs #14 + #16). Drift-watch follow-up landed in PR #18 (#17 added the SECURITY-TODO entries on main).
+- 2026-05-28 — post-pivot code review surfaced six new items (#24–#29). #24 closes the `gpgcheck=0` gap on the vendored nvidia repo and amends #19's overbroad signature-verification claim. #25 unwinds PR #13's redundant duplication of upstream akmods-provided `nvidia-container-toolkit` + CDI generator service. #26 fixes a path-filter gap that makes drift-refresh PRs skip variant CI. #27–#29 polish the new drift-watch workflow, normalise file-copy permissions, and tighten CI path filters so docs-only PRs don't trigger full image builds. Trivial stale-doc fixes (recipe prerequisites table, README variant-tag descriptions, drift-watch cron comment) landed inline with this update.

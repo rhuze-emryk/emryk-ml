@@ -8,8 +8,8 @@ name: Vendored repo drift watch
 
 on:
   schedule:
-    # Monday 13:00 UTC = 09:00 ET (winter) / 08:00 ET (summer). Same day as
-    # Renovate so the maintainer sees all drift signals together.
+    # Monday 13:00 UTC = 08:00 EST (winter) / 09:00 EDT (summer). Same day
+    # as Renovate so the maintainer sees all drift signals together.
     - cron: '0 13 * * MON'
   workflow_dispatch:
 

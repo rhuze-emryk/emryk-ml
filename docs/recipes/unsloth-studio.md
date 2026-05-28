@@ -17,8 +17,8 @@ The image already provides everything you need:
 
 | Component | Where it's set up |
 |---|---|
-| `nvidia-container-toolkit` | installed in `:latest-private-ml` (`build_files/private-ml-install.sh`) |
-| `/etc/cdi/nvidia.yaml` | regenerated at every boot by `nvidia-cdi-generate.service` |
+| `nvidia-container-toolkit` | shipped on `:latest` and `:latest-private-ml` (provided by upstream `ublue-os-nvidia-addons` via akmods) |
+| `/etc/cdi/nvidia.yaml` | regenerated at every boot by `ublue-nvctk-cdi.service` (upstream `ublue-os-nvidia-addons`) |
 | Rootless `podman.socket` | enabled globally (`build_files/build.sh`) |
 
 Quick sanity check:
@@ -74,7 +74,6 @@ Save as `~/.config/containers/systemd/unsloth-studio.container`, then run `syste
 ```ini
 [Unit]
 Description=Unsloth Studio (rootless)
-After=default.target
 
 [Container]
 Image=docker.io/unsloth/unsloth:latest
@@ -86,6 +85,8 @@ Exec=unsloth studio -H 0.0.0.0 -p 8888
 
 [Service]
 Restart=on-failure
+# Multi-GB first pull from docker.io; default 90s is too short.
+TimeoutStartSec=900
 
 [Install]
 WantedBy=default.target
