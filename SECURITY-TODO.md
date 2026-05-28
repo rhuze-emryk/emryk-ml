@@ -62,6 +62,43 @@ new ones when threat-model assumptions change.
   Follow-up worth considering: also vendor the GPG public key referenced by
   `gpgkey=` so the import path is fully offline.
 
+- [ ] **18. Harden the Unsloth Studio quadlet.**
+  `build_files/private-ml-install.sh` ships
+  `Image=docker.io/unsloth/unsloth:latest` with no digest pin, and
+  `containers-policy.json`'s default is `insecureAcceptAnything` for
+  docker.io — so first launch pulls an unverified third-party image and
+  runs it as root with `AddDevice=nvidia.com/gpu=all` and a `:/root`
+  volume. The host port is bound to `127.0.0.1:8888` and Studio has no
+  auth: on a workstation with multiple shell users (or distrobox
+  tenants) every local user can drive a root-privileged container with
+  full GPU access. SECURITY.md disclaims customer-supplied software, but
+  the variant ships the image *and* a one-click launcher, so this lives
+  closer to "we shipped it." Mitigations:
+  - Pin `Image=docker.io/unsloth/unsloth@sha256:<digest>` and add a
+    Renovate custom manager so the digest tracks upstream.
+  - Document in README that `127.0.0.1` means "trusts every local user
+    on this host," not "trusts you."
+  - Consider whether the polkit rule in `50-unsloth-studio.rules` should
+    require a password prompt instead of granting `wheel` silent start.
+  Closing condition: digest pinned, README note added, polkit decision
+  recorded.
+
+- [ ] **19. Vendor the Mullvad + NVIDIA container-toolkit repo files.**
+  `build_files/private-ml-install.sh` still `curl`s
+  `repository.mullvad.net/.../mullvad.repo` and
+  `nvidia.github.io/.../nvidia-container-toolkit.repo` into
+  `/etc/yum.repos.d/` at build time. Each `.repo` file chains to a
+  `gpgkey=` URL inside that same vendor CDN, so a CDN-level tamper at
+  build time could substitute both `baseurl` and `gpgkey` atomically
+  before `dnf` ever gets a chance to verify a signature. This is the
+  exact threat #6 solved for Tailscale by vendoring. For symmetry,
+  check in `build_files/mullvad.repo` and
+  `build_files/nvidia-container-toolkit.repo` with the current upstream
+  contents, swap the `curl` calls for `cp`s, and let Renovate watch the
+  upstream URLs for drift.
+  Closing condition: both `.repo` files committed under `build_files/`,
+  install script no longer curls them, Renovate watches drift.
+
 ## Medium priority — hardening and defense in depth
 
 - [x] **7. Enable `bootc-fetch-apply-updates.timer` (fetch-only).** _(2026-05-22)_
@@ -159,6 +196,17 @@ new ones when threat-model assumptions change.
   workstation that drives this repo) — does not block closing this
   item, since the policy itself is now defined.
 
+- [ ] **20. Flip Grype to `--fail-on critical`.**
+  #3 left this as a follow-up "once a triage process is in place." The
+  Grype step in both `build.yml` and `build-private-ml.yml` runs with
+  `continue-on-error: true` and no `--fail-on`, so a critical CVE in
+  the SBOM shows up in the job summary but does not block merge or
+  publish. Define triage first (proposed default: criticals block;
+  highs open a tracking issue; mediums report-only), document it in
+  SECURITY.md, then flip the flag.
+  Closing condition: triage process documented in SECURITY.md and the
+  workflow blocks on critical CVEs.
+
 ## Low priority — worth doing eventually
 
 - [x] **13. SECURITY.md documenting the threat model.** _(2026-05-22)_
@@ -227,6 +275,30 @@ new ones when threat-model assumptions change.
   passwordless sudo can ship their own `99zz-` drop-in but must do so
   deliberately.
 
+- [ ] **21. shellcheck the build-time payload guard.**
+  `build_files/verify-payload-rpm-owned.sh` (PR #4) is not covered by
+  the `shellcheck` step in either workflow. `build.sh` and
+  `private-ml-install.sh` both are. Add
+  `shellcheck build_files/verify-payload-rpm-owned.sh` to the lint
+  steps in `build.yml` and `build-private-ml.yml`.
+
+- [ ] **22. Sign by digest instead of per-tag.**
+  Both publish workflows iterate `for tag in …; cosign sign --key …
+  $IMAGE_FULL:$tag`. All tags resolve to the same digest, so this
+  creates N signature manifests for identical content. Replace with a
+  single `cosign sign --key … $IMAGE_FULL@$DIGEST` using the digest
+  already captured by `--digestfile`. No security improvement;
+  registry-hygiene cleanup that also shortens the publish loop.
+
+- [ ] **23. Drop dead inputs from the `build.yml` concurrency key.**
+  `build.yml` references `${{ inputs.brand_name }}` and
+  `${{ inputs.stream_name }}` in its concurrency group, but no
+  `inputs:` of those names are declared on the workflow — both
+  evaluate empty today. No security impact, but a future template
+  merge could declare matching input names and silently change the
+  concurrency behavior. Either delete the references or declare the
+  inputs explicitly.
+
 ---
 
 ## Deliberately out of scope
@@ -269,3 +341,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-26 — discovered `build-disk.yml` had been silently broken since template-time (no one had ever dispatched it). ISO leg referenced `./disk_config/iso.toml` which didn't exist (template was later split into iso-kde / iso-gnome); fixed to point at `iso-kde.toml` and removed unused `iso-gnome.toml`. qcow2 leg failed with `missing required info: DefaultRootFs` because Fedora bootc base images don't declare a default rootfs type; fixed by passing `--rootfs btrfs` to bib (matches Kinoite/Ublue convention, enables snapshot/rollback). Also fixed `iso-kde.toml`'s kickstart `bootc switch` URL — still pointed at the upstream `ublue-os/image-template`, would have pivoted any installed system to the wrong image (`8df4742`).
 - 2026-05-27 — item 3/item 8 strengthened: shipped `build_files/verify-payload-rpm-owned.sh`, invoked from both `Containerfile` and `Containerfile.private-ml` immediately before `bootc container lint` (PR #4, `eb91326`). Walks `/usr/{bin,sbin,libexec,lib,lib64,local}` and `/opt`, batches the file list through `xargs -L 500 rpm -qf`, fails the build on any non-allowlisted unowned file. The RPM-only SBOM scope (previously a manual discipline depending on every payload being `dnf5 install`d in `build.sh`/`private-ml-install.sh`) is now mechanically enforced. Allowlist covers bootc/rpm-ostree machinery, fc-cache output, systemd post-install symlinks, atomic-desktop dracut/bootupd/tmpfiles, glibc nss_db, Broadcom firmware NVRAM mappings, and two known false-positives (`/usr/bin/nvidia-container-toolkit`, `/usr/libexec/fedora-kinoite-plasmalogin-workaround` — both verifiably dnf-installed upstream but `rpm -qf` misreports in this image type; possible same class as the bug that made `rpm -qal` report 5000+ phantom-unowned files when the guard initially tried that approach).
 - 2026-05-27 — `build-private-ml.yml` got a `pull_request` trigger (PR #5, `e913494`). Path filter mirrors the existing push trigger plus `build_files/verify-payload-rpm-owned.sh`, so guard-script or variant-script changes get variant CI before merge instead of only post-merge via `workflow_run`. Closes the gap where PR #4 itself only exercised the new guard against the base image, relying on luck that the allowlist also covered private-ml-install.sh output (it did).
+- 2026-05-28 — **Backlog reopened** with items 18–23 from a full-codebase security review. Top concern is #18 (Unsloth Studio quadlet: unpinned `:latest` docker.io pull, root-privileged container with full GPU, no-auth loopback bind that trusts every local user). #19 vendors the last two curl-piped vendor `.repo` files. #20 follows through on #3's "flip to `--fail-on critical` once triage exists." #21–23 are CI/registry hygiene.
