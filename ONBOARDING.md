@@ -20,7 +20,7 @@ The image is open-source on GitHub but the *product* is the workstation service 
 Two tags ship:
 
 - `:latest` — base image, public foundation.
-- `:latest-private-ml` — base + Mullvad VPN + Unsloth Studio preconfigured. This is the customer-facing variant.
+- `:latest-private-ml` — base + Mullvad VPN preconfigured. This is the customer-facing variant.
 
 ---
 

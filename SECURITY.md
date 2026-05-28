@@ -9,7 +9,7 @@ The image is shipped as an immutable, bootc-managed deployment. Security fixes l
 | Tag | Supported |
 |---|---|
 | `:latest` | ✅ Yes — current tested release |
-| `:latest-private-ml` | ✅ Yes — `:latest` + Mullvad + Unsloth Studio |
+| `:latest-private-ml` | ✅ Yes — `:latest` + Mullvad |
 | `:latest.YYYYMMDD` / `:YYYYMMDD` | ⚠️ Date-stamped snapshots; not back-supported once a newer `:latest` exists |
 | Older releases | ❌ Not supported — use `bootc upgrade` to roll forward |
 
@@ -43,7 +43,7 @@ Below are deliberately out of scope for the base image. Customers running produc
 - **GPU compute-side attacks.** Vulnerabilities in the NVIDIA driver stack or in GPU compute isolation (between processes sharing a GPU) are not mitigated here. Track upstream NVIDIA advisories.
 - **Side-channel attacks on shared hosting infrastructure.** If this image runs on hardware shared with untrusted tenants, microarchitectural side channels (Spectre-family, etc.) are not addressed in this image.
 - **Anti-virus / anti-malware on Linux endpoints.** Intentionally out of scope — see `SECURITY-TODO.md` §"Deliberately out of scope". Not a signal-to-noise win on a workstation Linux platform.
-- **Customer-supplied software.** This image ships a base + curated tooling. Anything installed via `dnf`, distrobox, flatpak, or container pull after first boot is the customer's responsibility — including the `unsloth/unsloth` image referenced by `:latest-private-ml`.
+- **Customer-supplied software.** This image ships a base + curated tooling. Anything installed via `dnf`, distrobox, flatpak, or container pull after first boot is the customer's responsibility — including any third-party container images run through the rootless recipes under [`docs/recipes/`](./docs/recipes/).
 
 ## Reporting a vulnerability
 

@@ -29,8 +29,8 @@ on:
     branches: [main]
 
 env:
-  IMAGE_DESC: "Emryk ML with Mullvad VPN daemon and Unsloth Studio preconfigured. Variant of emryk-ml:latest."
-  IMAGE_KEYWORDS: "bootc,ublue,kinoite,nvidia,machine-learning,fedora,kde,cloud-workstation,unsloth,mullvad,vpn,llm"
+  IMAGE_DESC: "Emryk ML with Mullvad VPN daemon preconfigured. Variant of emryk-ml:latest."
+  IMAGE_KEYWORDS: "bootc,ublue,kinoite,nvidia,machine-learning,fedora,kde,cloud-workstation,mullvad,vpn,llm"
   IMAGE_LOGO_URL: "https://avatars.githubusercontent.com/u/120078124?s=200&v=4"
   IMAGE_NAME: "${{ github.event.repository.name }}"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
