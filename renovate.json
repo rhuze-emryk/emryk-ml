@@ -3,10 +3,6 @@
   "extends": [
     "config:recommended"
   ],
-  "schedule": [
-    "before 7am on Monday"
-  ],
-  "timezone": "America/New_York",
   "labels": [
     "dependencies"
   ],

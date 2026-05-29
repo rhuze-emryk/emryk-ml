@@ -280,18 +280,20 @@ new ones when threat-model assumptions change.
     and Docker base images (continuous answer to #1).
   - Custom managers track `GRYPE_VERSION` (#3) and `SYFT_VERSION` (#8)
     env vars against anchore/grype and anchore/syft GitHub releases.
-  - Weekly Monday-morning schedule (America/New_York) to batch updates.
+  - No `schedule` — Renovate opens PRs as soon as an upstream fix lands,
+    rather than batching to a weekly window, so security-relevant base/CVE
+    bumps surface promptly. Merge cadence is still human-controlled.
   - No auto-merge — every PR reviewed (matches [[project-hardening-philosophy]]:
     closed by default + explicit opt-in).
+  - Renovate is the **sole** dependency bot. Dependabot
+    (`.github/dependabot.yml`) was retired so the two don't open duplicate
+    GitHub-Action PRs; Renovate covers Actions *and* container digests *and*
+    the scanner env vars, and it SHA-pins.
 
-  Activation is a one-time UI step the maintainer must do:
-  1. Visit https://github.com/apps/renovate
-  2. Install on `rhuze-emryk/emryk-ml`
-  3. The first PR Renovate opens will be a "Configure Renovate" onboarding
-     PR that validates our `renovate.json`. Merge it.
-
-  Until the install is done, `renovate.json` is inert. The config itself
-  is committed and reviewed, which is the part this item was tracking.
+  Activation (one-time UI step) is **done** — Renovate installed on
+  `rhuze-emryk/emryk-ml` and confirmed running via developer.mend.io
+  (2026-05-29). Note: because `renovate.json` is committed, Renovate skips the
+  "Configure Renovate" onboarding PR and runs directly.
 
 - [x] **15. SELinux audit + explicit declaration.** _(2026-05-22)_
   Verified the running Kinoite image: SELinux is **enforcing**, targeted
