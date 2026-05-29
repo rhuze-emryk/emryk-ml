@@ -3,6 +3,12 @@
   "extends": [
     "config:recommended"
   ],
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security"
+    ]
+  },
   "labels": [
     "dependencies"
   ],
@@ -27,6 +33,16 @@
         "docker"
       ],
       "pinDigests": true
+    },
+    {
+      "description": "Auto-merge container base-image *digest* refreshes once CI is green (SECURITY-TODO #31). The kernel<->akmods coupling check in build.yml is the safety interlock: a kinoite-main bump that moves the kernel fails that check, so Renovate cannot auto-merge it until the akmods tag is bumped by hand. Tag/version changes are not 'digest' updates and are never auto-merged. Customer machines fetch+stage only and never auto-reboot, so the human control gate is the reboot, not the merge.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "automerge": true
     }
   ],
   "customManagers": [

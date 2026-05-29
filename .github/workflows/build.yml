@@ -5,7 +5,12 @@ on:
     branches:
       - main
   schedule:
-    - cron: '05 10 * * *'  # 10:05am UTC everyday
+    # Weekly, not nightly. The base is digest-pinned, so a scheduled rebuild
+    # only refreshes the ~20 dnf-layered packages — kernel/userland/driver
+    # arrive via Renovate digest bumps on a separate track, not via this cron.
+    # Monday aligns with vendor-drift-watch; fire workflow_dispatch for an
+    # urgent out-of-band layered-package fix. (See SECURITY-TODO #31.)
+    - cron: '05 10 * * MON'  # 10:05 UTC Mondays
   push:
     branches:
       - main

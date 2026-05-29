@@ -404,6 +404,46 @@ new ones when threat-model assumptions change.
   base needs this; `Containerfile.private-ml` inherits the already-validated
   emryk-ml image by digest.
 
+- [x] **31. Update cadence + auto-merge of green base digest bumps.** _(2026-05-29)_
+  Two coupled changes that define how upstream fixes reach the image:
+  - **Scheduled rebuild dropped from nightly to weekly** (`build.yml`
+    `cron: '05 10 * * MON'`). Measured: 23/23 nightlies produced distinct
+    digests, but that is build non-determinism, not content change — the base
+    is digest-pinned, so a scheduled rebuild only refreshes the ~20
+    dnf-layered packages. Kernel/userland/driver updates do **not** ride this
+    cron; they arrive only when the digest pin moves (Renovate). Weekly cuts
+    ~85% of the sign/attest/push churn; `workflow_dispatch` covers urgent
+    out-of-band layered fixes; and every base-bump merge triggers a build
+    anyway, so layered packages refresh on each bump *plus* weekly.
+  - **Renovate auto-merges container `digest` updates once CI is green**
+    (`renovate.json` packageRule). This makes a new kinoite-main/akmods image
+    available within ~1h of upstream publishing, hands-off. It is safe because
+    (a) the control gate is the customer **reboot** (fetch-only timer, #7), not
+    the merge — auto-merge only makes a tested image *available*; and (b) the
+    kernel<->akmods coupling check (#30) is the interlock — a kernel-moving
+    kinoite-main bump fails that check and is blocked from auto-merging until
+    the akmods tag is bumped by hand. Tag/version changes are not `digest`
+    updates and are never auto-merged.
+  - Also enabled `osvVulnerabilityAlerts` + a `security`-labelled
+    `vulnerabilityAlerts` config so CVE-fix PRs (for deps that carry advisory
+    metadata — Actions, future pip/etc.) are surfaced and prioritised; these
+    stay human-merged.
+
+  Requires repo settings: "Allow auto-merge" (General) and Dependabot
+  **alerts** (Code security) enabled — done via `gh api` at this commit.
+  Optional belt-and-suspenders: branch protection on `main` requiring the
+  "Build and push image" check.
+
+- [ ] **32. Nudge the operator when a security update is staged.**
+  `bootc-fetch-apply-updates.timer` stages updates silently and never reboots
+  (#7) — correct for training jobs, but it means a fix can sit downloaded-but-
+  inactive indefinitely with no signal. Add a runtime cue (e.g. a
+  `bootc upgrade --check` driven MOTD/Cockpit banner, or a desktop
+  notification) that tells the logged-in operator "a security update is staged
+  — reboot to apply", ideally flagging when the staged image moved the kernel.
+  Closing condition: operator gets a visible, dismissable prompt without any
+  auto-reboot.
+
 ---
 
 ## Deliberately out of scope
@@ -435,6 +475,7 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 13 done: `SECURITY.md` shipped (threat model, SLAs, disclosure policy); GitHub Private Vulnerability Reporting enabled on the repo via `gh api`.
 - 2026-05-29 — item 14 follow-through: Renovate confirmed installed/running (developer.mend.io); Dependabot retired and Monday schedule dropped so it is the sole bot and opens PRs promptly (PR #20); Renovate PRs auto-assigned to the maintainer (PR #22).
 - 2026-05-29 — item 30 done: `build.yml` now fails when the `akmods-nvidia-open` tag kernel diverges from the base `kinoite-main` kernel, closing the silent-drift gap that Renovate digest-pinning cannot cover.
+- 2026-05-29 — item 31 done: scheduled rebuild dropped nightly→weekly (Mondays); Renovate auto-merges green container `digest` bumps (interlocked by the #30 kernel<->akmods check); OSV/security vulnerability alerts enabled; repo "Allow auto-merge" + Dependabot alerts enabled via `gh api`.
 - 2026-05-22 — item 8 done: SLSA build provenance + CycloneDX SBOM attestations added to both publish workflows; pushed to GHCR as OCI referrers. Three independent trust signals per image now.
 - 2026-05-22 — item 14 done: `renovate.json` shipped (action SHA + base-image digest pinning, custom managers for GRYPE_VERSION/SYFT_VERSION, weekly schedule, no auto-merge). Maintainer must install the Renovate GitHub App at github.com/apps/renovate for the config to activate.
 - 2026-05-22 — item 15 done: SELinux audited (enforcing/targeted, container_use_dri_devices on) and explicitly declared via shipped `/etc/selinux/config`.
