@@ -103,6 +103,11 @@ To force-apply staged updates right now: `sudo systemctl reboot`. To roll back t
 sudo systemctl disable --now bootc-fetch-apply-updates.timer
 ```
 
+_Maintainers:_ how new images are built and published — the upstream flow,
+Renovate auto-merge of green digest bumps, and the kernel↔akmods tag dance — is
+documented in [`UPDATING.md`](UPDATING.md), with the rationale in
+[`docs/update-strategy.md`](docs/update-strategy.md).
+
 ## Containers
 
 Container workloads run **rootless** by default. The rootless `podman.socket` is enabled globally, so every user automatically gets a Docker-compatible API socket at `/run/user/$UID/podman/podman.sock` — scoped to that user's own privileges, with no path to root. `podman`, `podman-compose`, `distrobox`, and the `docker` CLI (via `podman-docker`) all work out of the box.
@@ -213,11 +218,14 @@ Containerfile.private-ml            private-ml variant: FROM :latest + install l
 build_files/build.sh                Package installs, repo setup, service config
 build_files/private-ml-install.sh   Mullvad VPN install layer (variant-only)
 .github/workflows/
-  build.yml                         Build, push to GHCR, sign with cosign
+  build.yml                         Build, push to GHCR, sign with cosign; akmods↔kernel coupling check; weekly cron
   build-private-ml.yml              Build :latest-private-ml (push/PR + chained on base rebuild)
   build-disk.yml                    Disk image builds (qcow2, raw, iso)
+  vendor-drift-watch.yml            Weekly diff of vendored .repo files vs upstream; opens an issue on drift
 cosign.pub                          Public signing key
-renovate.json                       Renovate config: keeps action SHAs, base-image digests, and tool versions current
+renovate.json                       Renovate (sole dep bot): pins action SHAs + base digests, auto-merges green digest bumps
+UPDATING.md                         Maintainer runbook: rolling the base, the akmods kernel dance, out-of-band builds
+docs/update-strategy.md             Why updates flow the way they do (ancestry, build-time vs runtime planes)
 SECURITY.md / SECURITY-TODO.md      Public security policy / private hardening backlog
 KEY-POLICY.md                       Signing-key lifecycle (rotation, access, incident response)
 ```
