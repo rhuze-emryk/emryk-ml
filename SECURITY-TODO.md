@@ -391,6 +391,19 @@ new ones when threat-model assumptions change.
   `pull_request` trigger and extend the push one. No security
   improvement; pure CI-budget conservation.
 
+- [x] **30. CI guard: NVIDIA akmods kernel must match the base kernel.** _(2026-05-29)_
+  `akmods-nvidia-open` ships kernel modules prebuilt for one kernel, encoded
+  in its tag (`…:main-44-<kver>…`). `kinoite-main` advances its kernel
+  independently, and Renovate's `pinDigests` can only bump the akmods
+  *digest*, never the `<kver>` string in the tag — so a base bump can pair a
+  new kernel with stale modules. The build still succeeds; the host boots to a
+  black screen. `build.yml` now parses `<kver>` from the Containerfile, reads
+  the built image's actual `kernel-core` (`buildah run … rpm -q`), and fails
+  the build with a "bump the akmods tag to `main-44-<kver>`" message on
+  mismatch — caught on the Renovate PR, not at a customer's boot. Only the
+  base needs this; `Containerfile.private-ml` inherits the already-validated
+  emryk-ml image by digest.
+
 ---
 
 ## Deliberately out of scope
@@ -420,6 +433,8 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-22 — item 12 done: `KEY-POLICY.md` shipped with rotation cadence (annual + on-incident), graceful procedure, incident runbook, GH Environment protection runbook, and keyless-signing roadmap.
 - 2026-05-22 — annual signing-key rotation scheduled as remote routine `trig_018BR9ZVeAzvocpPtPQQn4kR`, fires 2027-05-22T13:00:00Z (09:00 ET). Will open a tracking issue and hand off to maintainer; performs no cryptographic action.
 - 2026-05-22 — item 13 done: `SECURITY.md` shipped (threat model, SLAs, disclosure policy); GitHub Private Vulnerability Reporting enabled on the repo via `gh api`.
+- 2026-05-29 — item 14 follow-through: Renovate confirmed installed/running (developer.mend.io); Dependabot retired and Monday schedule dropped so it is the sole bot and opens PRs promptly (PR #20); Renovate PRs auto-assigned to the maintainer (PR #22).
+- 2026-05-29 — item 30 done: `build.yml` now fails when the `akmods-nvidia-open` tag kernel diverges from the base `kinoite-main` kernel, closing the silent-drift gap that Renovate digest-pinning cannot cover.
 - 2026-05-22 — item 8 done: SLSA build provenance + CycloneDX SBOM attestations added to both publish workflows; pushed to GHCR as OCI referrers. Three independent trust signals per image now.
 - 2026-05-22 — item 14 done: `renovate.json` shipped (action SHA + base-image digest pinning, custom managers for GRYPE_VERSION/SYFT_VERSION, weekly schedule, no auto-merge). Maintainer must install the Renovate GitHub App at github.com/apps/renovate for the config to activate.
 - 2026-05-22 — item 15 done: SELinux audited (enforcing/targeted, container_use_dri_devices on) and explicitly declared via shipped `/etc/selinux/config`.
