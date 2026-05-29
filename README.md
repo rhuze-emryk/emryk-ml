@@ -43,27 +43,20 @@ sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml:latest
 
 Reboot to apply.
 
-### Variants
+### A single image
 
-| Tag | Description |
-|---|---|
-| `:latest` | Default image. |
-| `:latest-private-ml` | `:latest` plus [Mullvad VPN](https://mullvad.net/) daemon preconfigured. Built manually on demand. |
+Emryk ML ships as **one image** — `:latest`. Roll forward with `bootc upgrade`; roll back to the previous deployment with `sudo bootc rollback`. `/var` and `/home` are preserved across deployments.
 
-Switch between variants with `bootc switch`; rollback to the previous deployment with `sudo bootc rollback`. `/var` and `/home` are preserved across switches.
+### Optional recipes
 
-### `:latest-private-ml` first-run
+The base is kept minimal and vendor-neutral; capabilities you might want are documented as opt-in recipes rather than baked in:
 
-**Mullvad.** The `mullvad-daemon` service starts at boot but the system has no account credentials. Log in once with:
+- **Private egress (VPN).** Route traffic through a Mullvad exit node via the Tailscale already in the image — privacy without embedding another vendor. See [`docs/recipes/private-egress.md`](./docs/recipes/private-egress.md).
+- **Unsloth Studio (rootless).** See [`docs/recipes/unsloth-studio.md`](./docs/recipes/unsloth-studio.md).
 
-```bash
-mullvad account login <YOUR-ACCOUNT-NUMBER>
-mullvad connect
-```
+### Deprecated: `:latest-private-ml`
 
-Or use the Mullvad GUI app, also installed.
-
-**Unsloth Studio.** No longer preinstalled. The rootful auto-launching Quadlet that earlier builds shipped (root container, moving `:latest` tag, unauthenticated loopback bind) was removed for being the wrong trade-off in a closed-by-default image. The supported replacement is the rootless recipe at [`docs/recipes/unsloth-studio.md`](./docs/recipes/unsloth-studio.md) — a `podman run` under your user with CDI GPU passthrough.
+Earlier releases published a `:latest-private-ml` variant (base + the Mullvad VPN daemon preconfigured). It is **no longer built** — baking a single commercial VPN vendor into every image worked against the project's no-lock-in principle. Existing `:latest-private-ml.*` tags remain in the registry but get no new builds or security updates. Move to `:latest` with `sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml:latest`, and use the private-egress recipe above if you want Mullvad.
 
 ## Remote management
 
@@ -191,8 +184,7 @@ Disk images do not currently carry a separate SBOM attestation — their RPM con
 | `latest` | Current tested release |
 | `YYYYMMDD` | Date-stamped build |
 | `latest.YYYYMMDD` | Same build, aliased |
-| `latest-private-ml` | `latest` + Mullvad VPN |
-| `latest-private-ml.YYYYMMDD` | Date-stamped private-ml build |
+| `latest-private-ml*` | **Deprecated** — no longer built (see "Deprecated: `:latest-private-ml`" above) |
 
 PRs produce a SHA-tagged image that is not pushed to the registry.
 
@@ -214,12 +206,9 @@ just build-qcow2
 
 ```
 Containerfile                       Multi-stage build: akmods-nvidia-open → kinoite-main
-Containerfile.private-ml            private-ml variant: FROM :latest + install layer
 build_files/build.sh                Package installs, repo setup, service config
-build_files/private-ml-install.sh   Mullvad VPN install layer (variant-only)
 .github/workflows/
   build.yml                         Build, push to GHCR, sign with cosign; akmods↔kernel coupling check; weekly cron
-  build-private-ml.yml              Build :latest-private-ml (push/PR + chained on base rebuild)
   build-disk.yml                    Disk image builds (qcow2, raw, iso)
   vendor-drift-watch.yml            Weekly diff of vendored .repo files vs upstream; opens an issue on drift
 cosign.pub                          Public signing key

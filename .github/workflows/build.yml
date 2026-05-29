@@ -153,8 +153,8 @@ jobs:
       # SECURITY-TODO #8: extract just the RPM database from the built image
       # so syft can catalog it in seconds, instead of walking the full multi-GB
       # bootc rootfs (which exhausts free GHA runners). Coverage is
-      # near-100% because build.sh/private-ml-install.sh install every
-      # third-party payload via dnf — no curl|tar of vendor binaries. The
+      # near-100% because build.sh installs every third-party payload via
+      # dnf — no curl|tar of vendor binaries. The
       # tradeoff is documented in SECURITY.md and SECURITY-TODO #3.
       - name: Extract RPM database from built image
         run: |

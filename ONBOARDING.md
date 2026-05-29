@@ -17,10 +17,7 @@ The source of truth for everything in this document is the `rhuze-emryk/emryk-ml
 
 The image is open-source on GitHub but the *product* is the workstation service Emryk runs on top of it.
 
-Two tags ship:
-
-- `:latest` — base image, public foundation.
-- `:latest-private-ml` — base + Mullvad VPN preconfigured. This is the customer-facing variant.
+One image ships: `:latest` — the public foundation customers run. (An earlier `:latest-private-ml` variant that baked in the Mullvad VPN is deprecated and no longer built; private egress is now an opt-in recipe using the Tailscale already in the image, so no extra vendor is embedded.)
 
 ---
 
