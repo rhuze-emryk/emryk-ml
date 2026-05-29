@@ -122,6 +122,7 @@ These make the automation work; listed so they survive a settings audit:
 - **Allow auto-merge** (Settings → General) — on.
 - **Dependabot alerts** (Settings → Code security) — on (feeds Renovate's
   vulnerability alerts; this is the *alerts* feature, not version updates).
-- *Optional belt-and-suspenders:* branch protection on `main` requiring the
-  "Build and push image" check, so nothing — including a stray auto-merge — can
-  land on a red build.
+- **Branch protection** on `main` requiring the "Build and push image" check —
+  on (`strict=false`, admins may override, no required reviews). This is what
+  makes "merge only when green" enforced for *every* path; without it,
+  `gh pr merge --auto` merges immediately and only Renovate self-gates on CI.
