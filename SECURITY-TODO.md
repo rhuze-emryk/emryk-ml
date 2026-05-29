@@ -431,8 +431,12 @@ new ones when threat-model assumptions change.
 
   Requires repo settings: "Allow auto-merge" (General) and Dependabot
   **alerts** (Code security) enabled — done via `gh api` at this commit.
-  Optional belt-and-suspenders: branch protection on `main` requiring the
-  "Build and push image" check.
+  Branch protection on `main` requires the "Build and push image" check
+  (`strict=false`; admins may override; no required reviews so Renovate
+  auto-merge still works) — enabled via `gh api` 2026-05-29, so the
+  "merge only when green" guarantee holds by construction for every path
+  (Renovate, `gh --auto`, manual). Without it, `gh --auto` merges
+  immediately and only Renovate's own CI-gating protects the branch.
 
 - [x] **32. Nudge the operator when a security update is staged.** _(2026-05-29)_
   `bootc-fetch-apply-updates.timer` stages updates silently and never reboots
@@ -486,6 +490,7 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-29 — item 30 done: `build.yml` now fails when the `akmods-nvidia-open` tag kernel diverges from the base `kinoite-main` kernel, closing the silent-drift gap that Renovate digest-pinning cannot cover.
 - 2026-05-29 — item 31 done: scheduled rebuild dropped nightly→weekly (Mondays); Renovate auto-merges green container `digest` bumps (interlocked by the #30 kernel<->akmods check); OSV/security vulnerability alerts enabled; repo "Allow auto-merge" + Dependabot alerts enabled via `gh api`.
 - 2026-05-29 — item 32 done: staged-update login nudge shipped (`emryk-update-nudge` timer + `/run/motd.d` banner via `build.sh`); MOTD-only, self-clearing on reboot, best-effort kernel-change note, no auto-reboot.
+- 2026-05-29 — branch protection enabled on `main` (required check "Build and push image", strict=false, admin-overridable, no required reviews) via `gh api`, completing the #31 auto-merge safety model — merges now gate on green CI by construction, not just by Renovate's good behaviour.
 - 2026-05-22 — item 8 done: SLSA build provenance + CycloneDX SBOM attestations added to both publish workflows; pushed to GHCR as OCI referrers. Three independent trust signals per image now.
 - 2026-05-22 — item 14 done: `renovate.json` shipped (action SHA + base-image digest pinning, custom managers for GRYPE_VERSION/SYFT_VERSION, weekly schedule, no auto-merge). Maintainer must install the Renovate GitHub App at github.com/apps/renovate for the config to activate.
 - 2026-05-22 — item 15 done: SELinux audited (enforcing/targeted, container_use_dri_devices on) and explicitly declared via shipped `/etc/selinux/config`.
