@@ -113,6 +113,38 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
           oci: false
 
+      # The akmods-nvidia-open base ships kernel modules PRE-BUILT for one
+      # specific kernel, encoded in its tag (…:main-44-<kver>…). kinoite-main
+      # rolls its kernel forward independently, and Renovate's pinDigests can
+      # only bump the akmods *digest* — never the <kver> in the tag string. So
+      # a base bump can silently pair a new kernel with old modules: the build
+      # still succeeds but the host boots to a black screen because the NVIDIA
+      # modules don't match the running kernel. Catch that desync here, on the
+      # PR, instead of at a customer's boot.
+      - name: Verify NVIDIA akmods kernel matches base kernel
+        run: |
+          set -euo pipefail
+          # Kernel baked into the akmods-nvidia-open tag in Containerfile,
+          # e.g. main-44-7.0.4-200.fc44.x86_64 -> 7.0.4-200.fc44.x86_64
+          akmods_kver=$(grep -oP 'akmods-nvidia-open:main-[0-9]+-\K[^@[:space:]]+' Containerfile || true)
+          if [ -z "$akmods_kver" ]; then
+            echo "::error::Could not parse the akmods-nvidia-open kernel from Containerfile — has the FROM line format changed?"
+            exit 1
+          fi
+          # Actual kernel the built image runs. We never replace the kernel,
+          # so this is exactly what the pinned kinoite-main base ships. Query
+          # rpm inside the image so the ubuntu runner needs no rpm of its own.
+          ctr=$(buildah from "localhost/${IMAGE_NAME}:${DEFAULT_TAG}")
+          image_kver=$(buildah run "$ctr" rpm -q --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-core | tail -1)
+          buildah rm "$ctr" >/dev/null
+          echo "akmods tag kernel : ${akmods_kver}"
+          echo "base image kernel : ${image_kver}"
+          if [ "$akmods_kver" != "$image_kver" ]; then
+            echo "::error::kinoite-main now ships kernel ${image_kver} but the akmods-nvidia-open tag in Containerfile is pinned to ${akmods_kver}. The prebuilt NVIDIA modules won't match the running kernel (black screen on boot). Bump the akmods tag to main-44-${image_kver} and let Renovate re-pin its digest."
+            exit 1
+          fi
+          echo "✓ NVIDIA akmods kernel matches base image kernel (${image_kver})"
+
       # SECURITY-TODO #8: extract just the RPM database from the built image
       # so syft can catalog it in seconds, instead of walking the full multi-GB
       # bootc rootfs (which exhausts free GHA runners). Coverage is
