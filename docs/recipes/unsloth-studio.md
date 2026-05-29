@@ -1,6 +1,6 @@
 # Unsloth Studio (rootless)
 
-Earlier builds of the `:latest-private-ml` variant shipped Unsloth Studio as a rootful Quadlet that auto-started on demand. That setup pulled `docker.io/unsloth/unsloth:latest` as root and exposed the no-auth Studio UI on a loopback port. We removed it because the trade-off — convenience versus running a moving-tag, unauthenticated, root-owned container on every Emryk Workstation that installed the variant — was the wrong shape for an image whose stated principle is *closed by default*.
+Earlier builds shipped Unsloth Studio as a rootful Quadlet that auto-started on demand. That setup pulled `docker.io/unsloth/unsloth:latest` as root and exposed the no-auth Studio UI on a loopback port. We removed it because the trade-off — convenience versus running a moving-tag, unauthenticated, root-owned container on every Emryk Workstation that installed the variant — was the wrong shape for an image whose stated principle is *closed by default*.
 
 This recipe is the supported replacement: a rootless container, started by you, scoped to your user.
 
@@ -17,7 +17,7 @@ The image already provides everything you need:
 
 | Component | Where it's set up |
 |---|---|
-| `nvidia-container-toolkit` | shipped on `:latest` and `:latest-private-ml` (provided by upstream `ublue-os-nvidia-addons` via akmods) |
+| `nvidia-container-toolkit` | shipped on `:latest` (provided by upstream `ublue-os-nvidia-addons` via akmods) |
 | `/etc/cdi/nvidia.yaml` | regenerated at every boot by `ublue-nvctk-cdi.service` (upstream `ublue-os-nvidia-addons`) |
 | Rootless `podman.socket` | enabled globally (`build_files/build.sh`) |
 

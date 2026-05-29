@@ -27,9 +27,6 @@ jobs:
           - name: tailscale
             vendored: build_files/tailscale.repo
             upstream: https://pkgs.tailscale.com/stable/fedora/tailscale.repo
-          - name: mullvad
-            vendored: build_files/mullvad.repo
-            upstream: https://repository.mullvad.net/rpm/stable/mullvad.repo
           - name: nvidia-container-toolkit
             vendored: build_files/nvidia-container-toolkit.repo
             upstream: https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo

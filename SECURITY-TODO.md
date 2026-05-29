@@ -243,20 +243,11 @@ new ones when threat-model assumptions change.
   provided by upstream akmods before the PR; this item un-does the
   net-no-op work.
 
-- [ ] **26. Extend `build-private-ml.yml` path filter to include vendored `.repo` files.**
-  Push and pull_request triggers in `.github/workflows/build-private-ml.yml`
-  match on `Containerfile.private-ml`, `build_files/private-ml-install.sh`,
-  `build_files/verify-payload-rpm-owned.sh`, and the workflow file
-  itself — but **not** `build_files/mullvad.repo` (the vendored file
-  the variant install script `cp`s from `/ctx`). A drift-refresh PR
-  prompted by `vendor-drift-watch.yml` editing only `mullvad.repo`
-  does not trigger variant CI; regressions like a missing `gpgkey=`
-  line escape PR review and only surface post-merge via the chained
-  `workflow_run` rebuild after `:latest` has already been built and
-  pushed.
-  Closing condition: `build_files/mullvad.repo` (and
-  `build_files/nvidia-container-toolkit.repo`, if it survives #25) in
-  both the push and pull_request `paths:` lists.
+- [x] **26. Extend `build-private-ml.yml` path filter to include vendored `.repo` files.** _(2026-05-29 — obsoleted by removal)_
+  Obsoleted by item #33: the private-ml variant, its `build-private-ml.yml`
+  workflow, and `build_files/mullvad.repo` were retired, so there is no
+  separate variant-CI path filter to maintain. `vendor-drift-watch.yml` no
+  longer watches `mullvad.repo`.
 
 ## Low priority — worth doing eventually
 
@@ -330,13 +321,11 @@ new ones when threat-model assumptions change.
 
 - [ ] **21. shellcheck the build-time payload guard.**
   `build_files/verify-payload-rpm-owned.sh` (PR #4) is not covered by
-  the `shellcheck` step in either workflow. `build.sh` and
-  `private-ml-install.sh` both are. Add
-  `shellcheck build_files/verify-payload-rpm-owned.sh` to the lint
-  steps in `build.yml` and `build-private-ml.yml`.
+  the `shellcheck` step in `build.yml`, which only lints `build.sh`. Add
+  `shellcheck build_files/verify-payload-rpm-owned.sh` to that lint step.
 
 - [ ] **22. Sign by digest instead of per-tag.**
-  Both publish workflows iterate `for tag in …; cosign sign --key …
+  `build.yml` iterates `for tag in …; cosign sign --key …
   $IMAGE_FULL:$tag`. All tags resolve to the same digest, so this
   creates N signature manifests for identical content. Replace with a
   single `cosign sign --key … $IMAGE_FULL@$DIGEST` using the digest
@@ -371,9 +360,9 @@ new ones when threat-model assumptions change.
     one-line comment fix.
 
 - [ ] **28. Use `install -m 0644` for vendored `.repo` copies.**
-  `build.sh` `cp /ctx/nvidia-container-toolkit.repo …` and
-  `private-ml-install.sh` `cp /ctx/mullvad.repo …` use bare `cp`,
-  while every other config drop in the same scripts uses
+  `build.sh` `cp /ctx/tailscale.repo …` and
+  `cp /ctx/nvidia-container-toolkit.repo …` use bare `cp`,
+  while every other config drop in the script uses
   `install -m 0644` (cosign.pub, policy.json, registries.d, firewalld
   zones, selinux config, sudoers, bootc service drop-in). Fine today
   under Fedora's default 0022 umask; latent fragility if a future
@@ -457,6 +446,25 @@ new ones when threat-model assumptions change.
     channel can be layered later if customer signal asks for it.
   No auto-reboot anywhere — the operator still chooses when to apply.
 
+- [x] **33. Retire the `:latest-private-ml` (Mullvad) variant; document private egress instead.** _(2026-05-29)_
+  Baking a single commercial VPN vendor (Mullvad) into a shipped image cut
+  against the project's no-lock-in principle: if the vendor degrades (an
+  acquisition, a policy change) or its repo/keyring moves, every image carries
+  that liability and removal becomes a forced migration. Resolved by removal,
+  not hardening:
+  - Deleted `Containerfile.private-ml`, `build_files/private-ml-install.sh`,
+    `build_files/mullvad.repo`, and `.github/workflows/build-private-ml.yml`;
+    dropped the `mullvad` entry from `vendor-drift-watch.yml`.
+  - The base (`:latest`) stays Tailscale-only — Tailscale is justified
+    infrastructure (the management/access plane, with Headscale as an escape
+    hatch), not a discretionary add-on.
+  - Private egress is now an opt-in recipe (`docs/recipes/private-egress.md`):
+    route through a Mullvad exit node via the Tailscale already in the image
+    (no vendor embedded), or layer the standalone Mullvad client yourself.
+  - `:latest-private-ml*` tags are **deprecated** — left in the registry for
+    anyone pinned to them, but no new builds or security updates. README and
+    SECURITY.md document the move to `:latest`.
+
 ---
 
 ## Deliberately out of scope
@@ -491,6 +499,7 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-29 — item 31 done: scheduled rebuild dropped nightly→weekly (Mondays); Renovate auto-merges green container `digest` bumps (interlocked by the #30 kernel<->akmods check); OSV/security vulnerability alerts enabled; repo "Allow auto-merge" + Dependabot alerts enabled via `gh api`.
 - 2026-05-29 — item 32 done: staged-update login nudge shipped (`emryk-update-nudge` timer + `/run/motd.d` banner via `build.sh`); MOTD-only, self-clearing on reboot, best-effort kernel-change note, no auto-reboot.
 - 2026-05-29 — branch protection enabled on `main` (required check "Build and push image", strict=false, admin-overridable, no required reviews) via `gh api`, completing the #31 auto-merge safety model — merges now gate on green CI by construction, not just by Renovate's good behaviour.
+- 2026-05-29 — item 33 done: private-ml (Mullvad) variant retired (4 files deleted + `vendor-drift-watch.yml` mullvad entry dropped); single image (`:latest`) going forward; private egress moved to an opt-in recipe (`docs/recipes/private-egress.md`) using Tailscale's Mullvad exit nodes; `:latest-private-ml*` tags deprecated, not deleted.
 - 2026-05-22 — item 8 done: SLSA build provenance + CycloneDX SBOM attestations added to both publish workflows; pushed to GHCR as OCI referrers. Three independent trust signals per image now.
 - 2026-05-22 — item 14 done: `renovate.json` shipped (action SHA + base-image digest pinning, custom managers for GRYPE_VERSION/SYFT_VERSION, weekly schedule, no auto-merge). Maintainer must install the Renovate GitHub App at github.com/apps/renovate for the config to activate.
 - 2026-05-22 — item 15 done: SELinux audited (enforcing/targeted, container_use_dri_devices on) and explicitly declared via shipped `/etc/selinux/config`.

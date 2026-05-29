@@ -21,7 +21,6 @@ Fedora 44                       upstream distro; ships CVE fixes continuously
             │                   Rebuilt DAILY; rolls its kernel forward on
             │                   Fedora's schedule.
             └─ emryk-ml         THIS image: FROM kinoite-main + NVIDIA + hardening
-                 └─ emryk-ml:latest-private-ml   variant (Mullvad), FROM emryk-ml
 
    ublue-os/akmods-nvidia-open  separate ublue image: NVIDIA open kernel modules,
                                 PRE-BUILT for one specific kernel (encoded in its

@@ -41,7 +41,7 @@ Compromise of the signing key is the single highest-impact event in this product
 
 **Workflow access boundary:**
 
-- `SIGNING_SECRET` is read only by the "Sign container image" step in `build.yml` and `build-private-ml.yml`. No other step references it. A compromised earlier step in the same job would still expose it, so the GitHub Environment gate is the meaningful boundary.
+- `SIGNING_SECRET` is read only by the "Sign container image" step in `build.yml`. No other step references it. A compromised earlier step in the same job would still expose it, so the GitHub Environment gate is the meaningful boundary.
 
 ---
 
@@ -141,7 +141,7 @@ To move `SIGNING_SECRET` from a repository-level secret to an environment-scoped
 3. Under **Deployment branches**, restrict to `main` only. Tags and other branches cannot trigger this environment.
 4. Under **Environment secrets**, add `SIGNING_SECRET` with the current private key value.
 5. In github.com → **Settings → Secrets and variables → Actions**, **delete** the repository-level `SIGNING_SECRET`. From this point only the environment-scoped one exists.
-6. Edit `.github/workflows/build.yml` and `.github/workflows/build-private-ml.yml` — on the job that does the cosign signing, add:
+6. Edit `.github/workflows/build.yml` — on the job that does the cosign signing, add:
    ```yaml
    environment: production-signing
    ```
