@@ -83,7 +83,7 @@ Fedora ships fix
 The two slow links are deliberate: there is no human gate on the *merge* (the
 gate moved to the reboot), and the reboot is the customer's call so training
 jobs survive. For a genuinely urgent kernel CVE, the operator reboots promptly
-(see SECURITY-TODO #32 for the planned "update staged — reboot to apply" nudge).
+(a login banner reminds the operator when an update is staged — SECURITY-TODO #32).
 
 **Why auto-merging digests is safe here:** the control gate is the *reboot*,
 not the merge — auto-merge only makes a *tested* image available; nothing
@@ -129,7 +129,7 @@ human. This is exactly what makes digest auto-merge safe.
 | Layered `dnf` packages | the scheduled / on-merge rebuild | Auto (pulled live each build) |
 | Scheduled rebuild | `build.yml` `cron: '05 10 * * MON'` | Weekly |
 | Customer fetch/stage | `bootc-fetch-apply-updates.timer` | Auto (~8h), **no reboot** |
-| Customer apply (reboot) | operator | **Manual** (nudge planned — #32) |
+| Customer apply (reboot) | operator | **Manual**; a login banner nudges when an update is staged (#32) |
 
 Renovate is the **sole** dependency bot (Dependabot retired, PR #20) and runs
 with **no schedule** so security PRs surface promptly; every Renovate PR is

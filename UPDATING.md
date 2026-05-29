@@ -81,7 +81,7 @@ You consume `kinoite-main`, not Fedora directly, so the actionable event is
 2. If no PR yet, ublue may not have rebuilt with the fix. Don't hand-edit the
    digest ahead of ublue — you'd lose the matched akmods build.
 3. Tell customers to reboot if it's urgent (the fix is staged, not active, until
-   they do — see SECURITY-TODO #32 for the planned in-product nudge).
+   they do — a login banner reminds them (`emryk-update-nudge`, SECURITY-TODO #32)).
 
 ### 4. Refreshing a vendored `.repo` file
 
