@@ -100,6 +100,100 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
+# SECURITY-TODO #32: nudge the operator when an update is staged. The
+# bootc-fetch timer (#7) fetches + stages silently and never reboots, so a
+# fix can sit downloaded-but-inactive with no signal. This oneshot writes a
+# login banner to /run/motd.d (tmpfs) when bootc reports a staged deployment,
+# so every SSH/console login sees it; it self-clears on the reboot that
+# applies the update. Best-effort kernel-change note. A timer re-evaluates so
+# the banner appears/disappears as the staged state changes. No auto-reboot.
+cat > /usr/libexec/emryk/update-nudge.sh <<'NUDGE'
+#!/bin/bash
+# Write or clear the staged-update login nudge. Parses `bootc status` with
+# python3 (always present on Kinoite) to avoid a jq dependency. Resilient by
+# design (no `set -e`): any failure degrades to clearing or to the generic
+# message, never an error to the operator.
+set -uo pipefail
+
+MOTD=/run/motd.d/95-emryk-update.motd
+
+status_json=$(bootc status --json 2>/dev/null) || { rm -f "$MOTD"; exit 0; }
+
+# Emits: "<yes|no> <ostree-checksum> <deploy-serial>"
+parsed=$(printf '%s' "$status_json" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("no  "); sys.exit(0)
+staged = (d.get("status") or {}).get("staged")
+if not staged:
+    print("no  "); sys.exit(0)
+o = staged.get("ostree") or {}
+serial = o.get("deploySerial")
+print("yes", o.get("checksum") or "", "" if serial is None else serial)
+' 2>/dev/null) || { rm -f "$MOTD"; exit 0; }
+
+read -r has_staged checksum serial <<<"$parsed"
+
+if [ "${has_staged:-no}" != "yes" ]; then
+    rm -f "$MOTD"
+    exit 0
+fi
+
+# Best-effort: does the staged deployment carry a different kernel? Read the
+# staged deployment's own modules dir so a rollback's kernel can't be
+# mistaken for the staged one. If the schema differs or the path is missing,
+# staged_kver stays empty and we fall back to the generic message.
+running_kver=$(uname -r)
+staged_kver=""
+if [ -n "${checksum:-}" ]; then
+    for moddir in /ostree/deploy/*/deploy/"${checksum}.${serial:-0}"/usr/lib/modules/*/; do
+        [ -d "$moddir" ] || continue
+        kv=${moddir%/}; kv=${kv##*/}
+        [ "$kv" != "$running_kver" ] && staged_kver=$kv
+    done
+fi
+
+mkdir -p /run/motd.d
+{
+    echo ""
+    echo "  *** A system update has been downloaded and staged. ***"
+    if [ -n "$staged_kver" ]; then
+        echo "      It includes a new kernel (${running_kver} -> ${staged_kver});"
+        echo "      the NVIDIA driver reloads on reboot."
+    fi
+    echo "      Reboot when convenient to apply it:  sudo systemctl reboot"
+    echo "      Nothing reboots on its own; running jobs are safe until you do."
+    echo ""
+} > "$MOTD"
+NUDGE
+chmod +x /usr/libexec/emryk/update-nudge.sh
+
+cat > /etc/systemd/system/emryk-update-nudge.service <<'EOF'
+[Unit]
+Description=Refresh the staged-update login nudge (/run/motd.d)
+Documentation=https://github.com/rhuze-emryk/emryk-ml/blob/main/UPDATING.md
+After=bootc-fetch-apply-updates.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/emryk/update-nudge.sh
+EOF
+
+cat > /etc/systemd/system/emryk-update-nudge.timer <<'EOF'
+[Unit]
+Description=Periodically refresh the staged-update login nudge
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
 # SSH hardening — key-only auth, no root login over SSH. Cloud workstations
 # with public IPs get scanned constantly; password auth and root login are
 # the two biggest brute-force surfaces. Drops into sshd_config.d so it
@@ -190,6 +284,7 @@ systemctl enable \
     bootc-fetch-apply-updates.timer \
     cockpit.socket \
     emryk-install-flatpaks.service \
+    emryk-update-nudge.timer \
     flatpak-system-update.timer \
     nvidia-cdi-generate.service \
     tailscaled.service

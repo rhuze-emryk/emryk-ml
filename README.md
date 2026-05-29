@@ -91,7 +91,7 @@ or via the host's tailnet IP (`https://100.x.y.z:9090`). If you ever need Cockpi
 
 `bootc-fetch-apply-updates.timer` is enabled on every build, and runs roughly every 8 hours (with 2h randomised jitter). It **fetches and stages** updates from the registry but **does not reboot** — a customer training job can run for days, and a surprise unattended reboot would vaporise it.
 
-When an update has been staged, the change takes effect on the next reboot. To check what's queued:
+When an update has been staged, a banner at your next login reminds you to reboot (and flags it if a new kernel is included). The change takes effect on the next reboot. To check what's queued:
 
 ```bash
 bootc status

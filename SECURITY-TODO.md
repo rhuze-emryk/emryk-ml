@@ -434,15 +434,24 @@ new ones when threat-model assumptions change.
   Optional belt-and-suspenders: branch protection on `main` requiring the
   "Build and push image" check.
 
-- [ ] **32. Nudge the operator when a security update is staged.**
+- [x] **32. Nudge the operator when a security update is staged.** _(2026-05-29)_
   `bootc-fetch-apply-updates.timer` stages updates silently and never reboots
   (#7) — correct for training jobs, but it means a fix can sit downloaded-but-
-  inactive indefinitely with no signal. Add a runtime cue (e.g. a
-  `bootc upgrade --check` driven MOTD/Cockpit banner, or a desktop
-  notification) that tells the logged-in operator "a security update is staged
-  — reboot to apply", ideally flagging when the staged image moved the kernel.
-  Closing condition: operator gets a visible, dismissable prompt without any
-  auto-reboot.
+  inactive indefinitely with no signal. Shipped via `build.sh`:
+  - `/usr/libexec/emryk/update-nudge.sh` reads `bootc status --json` (parsed
+    with `python3` — no `jq` dependency) and, when a staged deployment exists,
+    writes a login banner to `/run/motd.d/95-emryk-update.motd` so every
+    SSH/console login (pam_motd) sees "a system update is staged — reboot to
+    apply: `sudo systemctl reboot`". Best-effort kernel-change note: reads the
+    *staged* deployment's own `usr/lib/modules` so a rollback's kernel can't be
+    mistaken for it; degrades to the generic message if unreadable.
+  - `/run` is tmpfs, so the banner **self-clears** on the reboot that applies
+    the update; `emryk-update-nudge.timer` (OnBootSec=2min, every 30min)
+    re-evaluates so it appears/disappears with the staged state.
+  - Chosen channel: MOTD only. Robust for an SSH/remote-desktop cloud
+    workstation and free of session/D-Bus fragility. A KDE/Cockpit secondary
+    channel can be layered later if customer signal asks for it.
+  No auto-reboot anywhere — the operator still chooses when to apply.
 
 ---
 
@@ -476,6 +485,7 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-29 — item 14 follow-through: Renovate confirmed installed/running (developer.mend.io); Dependabot retired and Monday schedule dropped so it is the sole bot and opens PRs promptly (PR #20); Renovate PRs auto-assigned to the maintainer (PR #22).
 - 2026-05-29 — item 30 done: `build.yml` now fails when the `akmods-nvidia-open` tag kernel diverges from the base `kinoite-main` kernel, closing the silent-drift gap that Renovate digest-pinning cannot cover.
 - 2026-05-29 — item 31 done: scheduled rebuild dropped nightly→weekly (Mondays); Renovate auto-merges green container `digest` bumps (interlocked by the #30 kernel<->akmods check); OSV/security vulnerability alerts enabled; repo "Allow auto-merge" + Dependabot alerts enabled via `gh api`.
+- 2026-05-29 — item 32 done: staged-update login nudge shipped (`emryk-update-nudge` timer + `/run/motd.d` banner via `build.sh`); MOTD-only, self-clearing on reboot, best-effort kernel-change note, no auto-reboot.
 - 2026-05-22 — item 8 done: SLSA build provenance + CycloneDX SBOM attestations added to both publish workflows; pushed to GHCR as OCI referrers. Three independent trust signals per image now.
 - 2026-05-22 — item 14 done: `renovate.json` shipped (action SHA + base-image digest pinning, custom managers for GRYPE_VERSION/SYFT_VERSION, weekly schedule, no auto-merge). Maintainer must install the Renovate GitHub App at github.com/apps/renovate for the config to activate.
 - 2026-05-22 — item 15 done: SELinux audited (enforcing/targeted, container_use_dri_devices on) and explicitly declared via shipped `/etc/selinux/config`.
