@@ -6,6 +6,12 @@
   "labels": [
     "dependencies"
   ],
+  "reviewers": [
+    "rhuze-emryk"
+  ],
+  "assignees": [
+    "rhuze-emryk"
+  ],
   "prConcurrentLimit": 5,
   "packageRules": [
     {
