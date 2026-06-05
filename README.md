@@ -99,7 +99,10 @@ sudo systemctl disable --now bootc-fetch-apply-updates.timer
 _Maintainers:_ how new images are built and published — the upstream flow,
 Renovate auto-merge of green digest bumps, and the kernel↔akmods tag dance — is
 documented in [`UPDATING.md`](UPDATING.md), with the rationale in
-[`docs/update-strategy.md`](docs/update-strategy.md).
+[`docs/update-strategy.md`](docs/update-strategy.md). Every Renovate landing on
+`main` — including the silent auto-merged digest bumps — is logged to the
+[Renovate activity log](https://github.com/rhuze-emryk/emryk-ml/issues/36);
+watch or subscribe to that issue to stay aware of dependency changes.
 
 ## Containers
 
