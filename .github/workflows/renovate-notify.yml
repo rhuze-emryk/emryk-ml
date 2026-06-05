@@ -1,0 +1,47 @@
+name: Renovate activity notifier
+
+# Announce when Renovate lands on main — especially the container-digest
+# *auto-merges* that merge themselves with no prompt (see renovate.json). We
+# trigger off the build workflow's completion rather than the raw push so the
+# notice can report the actual build result (green/red), then comment on the
+# tracking issue (#36). Watching that issue or the repo turns each entry into a
+# GitHub notification, which is the whole point: no more silent dependency
+# changes.
+
+on:
+  workflow_run:
+    workflows: ["Build container image"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  notify:
+    # Only build runs that came from a push to main authored by Renovate.
+    # pull_request / scheduled / dispatch runs and human commits are ignored.
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      (contains(github.event.workflow_run.head_commit.author.email, 'renovate') ||
+       contains(github.event.workflow_run.head_commit.author.name, 'renovate'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment on the Renovate activity log (#36)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          # Title is untrusted input — only ever passed as a printf *argument*
+          # (never the format string), so no command/format injection.
+          TITLE: ${{ github.event.workflow_run.display_title }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          icon='✅'
+          [ "$CONCLUSION" = 'success' ] || icon='❌'
+          body=$(printf '%s Renovate landed on `main`\n\n- **%s**\n- commit `%s` · build **%s**\n- [build run](%s)' \
+            "$icon" "$TITLE" "${SHA:0:8}" "$CONCLUSION" "$RUN_URL")
+          gh issue comment 36 --repo "$REPO" --body "$body"
