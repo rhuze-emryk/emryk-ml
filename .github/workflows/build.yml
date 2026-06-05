@@ -56,11 +56,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
+      # Skip the ~8-minute image build on PRs that only touch docs / CI-config —
+      # none of the files matched below can change the built image. The job
+      # itself still runs and reports the required "Build and push image" check
+      # (green), so branch protection + Renovate auto-merge keep working; only
+      # the heavy steps are skipped. Fail-open: any path NOT listed forces a
+      # full build. Pushes to main, schedules and manual runs always build, so
+      # the publish path is untouched.
+      - name: Detect image-relevant changes
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          NONIMAGE_RE: '(\.md$|^docs/|^\.docs/|^\.claude/|^disk_config/|^renovate\.json$|^\.github/renovate\.json5$|^\.github/workflows/(renovate-notify|vendor-drift-watch|build-disk)\.yml$|^LICENSE$|^Justfile$|^artifacthub-repo\.yml$|^\.gitignore$)'
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != 'pull_request' ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "Event '${{ github.event_name }}' -> full build."
+            exit 0
+          fi
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' | sed '/^$/d')
+          if [ -z "$files" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "No changed files reported -> building (fail-open)."
+            exit 0
+          fi
+          echo "Changed files:"; printf '  %s\n' $files
+          if printf '%s\n' "$files" | grep -qvE "$NONIMAGE_RE"; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "-> image-relevant change detected; building."
+          else
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "-> only docs / CI-config changed; skipping the image build."
+          fi
+
       - name: Lint shell scripts
         run: shellcheck build_files/build.sh
 
       # This is optional, but if you see that your builds are way too big for the runners, you can enable this by uncommenting the following lines:
       - name: Maximize build space
+        if: steps.changes.outputs.build == 'true'
         uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # master as of 2025-10-10 (post-v9, untagged)
 
       - name: Get current date
@@ -107,6 +144,7 @@ jobs:
 
       - name: Build Image
         id: build_image
+        if: steps.changes.outputs.build == 'true'
         uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c # main as of 2026-04-09 (Node 24)
         with:
           containerfiles: |
@@ -127,6 +165,7 @@ jobs:
       # modules don't match the running kernel. Catch that desync here, on the
       # PR, instead of at a customer's boot.
       - name: Verify NVIDIA akmods kernel matches base kernel
+        if: steps.changes.outputs.build == 'true'
         run: |
           set -euo pipefail
           # Kernel baked into the akmods-nvidia-open tag in Containerfile,
@@ -157,6 +196,7 @@ jobs:
       # dnf — no curl|tar of vendor binaries. The
       # tradeoff is documented in SECURITY.md and SECURITY-TODO #3.
       - name: Extract RPM database from built image
+        if: steps.changes.outputs.build == 'true'
         run: |
           # buildah unshare enters a user namespace so rootless mount works.
           # On this image /usr/lib/sysimage/rpm is a symlink to ../../share/rpm,
@@ -181,6 +221,7 @@ jobs:
           fi
 
       - name: Install Syft
+        if: steps.changes.outputs.build == 'true'
         run: |
           curl -fsSL "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin syft
@@ -189,6 +230,7 @@ jobs:
       # SECURITY-TODO #8: CycloneDX SBOM, generated from the extracted RPM
       # database directory. attest-sbom below binds this to the pushed digest.
       - name: Generate SBOM (CycloneDX)
+        if: steps.changes.outputs.build == 'true'
         run: |
           syft scan dir:./sbom-input -o cyclonedx-json=sbom.cdx.json
           {
@@ -199,6 +241,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Grype
+        if: steps.changes.outputs.build == 'true'
         run: |
           curl -fsSL "https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}/grype_${GRYPE_VERSION#v}_linux_amd64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin grype
@@ -208,6 +251,7 @@ jobs:
       # Report-only — does not fail the build. Flip to `--fail-on critical`
       # once a triage process is in place.
       - name: Scan SBOM with Grype (report-only)
+        if: steps.changes.outputs.build == 'true'
         continue-on-error: true
         run: |
           grype "sbom:./sbom.cdx.json" --output table > grype-report.txt
