@@ -3,10 +3,17 @@
   "extends": [
     "config:recommended"
   ],
+  "timezone": "Etc/UTC",
+  "schedule": [
+    "before 9am on monday"
+  ],
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
     "labels": [
       "security"
+    ],
+    "schedule": [
+      "at any time"
     ]
   },
   "labels": [
@@ -20,6 +27,15 @@
   ],
   "prConcurrentLimit": 5,
   "packageRules": [
+    {
+      "description": "Let new *version* releases settle ~3 days before a PR opens, to dodge yanked or broken releases. Does NOT match 'digest' updates, so container base-image digest refreshes still follow the weekly schedule + green-CI auto-merge below. Security updates bypass this via vulnerabilityAlerts.",
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "minimumReleaseAge": "3 days"
+    },
     {
       "description": "Pin every GitHub Action by SHA (SECURITY-TODO #10).",
       "matchManagers": [
