@@ -38,6 +38,14 @@ jobs:
     name: Build and push image
     runs-on: ubuntu-24.04
 
+    # Gate SIGNING_SECRET behind the `production-signing` environment
+    # (required-reviewer approval, restricted to main) — KEY-POLICY.md
+    # "GitHub Environment runbook". Resolves to the environment ONLY for the
+    # publishing paths (push/schedule/dispatch on main); on pull_request it is
+    # empty, so PR builds are never gated and CI stays fast. The signing step
+    # reads SIGNING_SECRET, which is environment-scoped once moved there.
+    environment: ${{ (github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) && 'production-signing' || '' }}
+
     permissions:
       contents: read
       packages: write
