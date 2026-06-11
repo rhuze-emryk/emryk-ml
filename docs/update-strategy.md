@@ -70,24 +70,30 @@ published image, which only moves when we publish.
 ```
 Fedora ships fix
   → ublue rebuilds kinoite-main (daily) → new digest published
-  → Renovate detects the new digest (no schedule → within ~hours)
+  → Renovate detects the new digest (weekly Monday run; force it
+    mid-week from the Dependency Dashboard issue)
   → Renovate opens a digest-bump PR, auto-assigned to the maintainer
   → CI build runs (incl. the kernel↔akmods coupling check)
   → green → Renovate AUTO-MERGES (SECURITY-TODO #31)        ← hands-off
+  → publish run pauses at the production-signing
+    environment (PR #41)                                    ← maintainer approves
   → our build publishes :latest
   → customer bootc timer fetches + stages (~8h)
   → customer REBOOTS                                        ← manual, by design
 ```
 
-The two slow links are deliberate: there is no human gate on the *merge* (the
-gate moved to the reboot), and the reboot is the customer's call so training
-jobs survive. For a genuinely urgent kernel CVE, the operator reboots promptly
-(a login banner reminds the operator when an update is staged — SECURITY-TODO #32).
+The slow links are deliberate. There is no human gate on the *merge* — review
+moved out of the hot path — but two manual gates remain: the maintainer's
+one-click `production-signing` approval before anything reaches the registry,
+and the customer's reboot, which is their call so training jobs survive. For a
+genuinely urgent kernel CVE, the operator reboots promptly (a login banner
+reminds the operator when an update is staged — SECURITY-TODO #32).
 
-**Why auto-merging digests is safe here:** the control gate is the *reboot*,
-not the merge — auto-merge only makes a *tested* image available; nothing
-reboots a workstation. And the coupling check (below) blocks the one dangerous
-class of bump.
+**Why auto-merging digests is safe here:** auto-merge only makes a *tested*
+image available — it publishes nothing (the `production-signing` approval
+gates the registry) and reboots nothing (the customer applies on their own
+schedule). And the coupling check (below) blocks the one dangerous class of
+bump.
 
 ---
 
@@ -127,12 +133,14 @@ human. This is exactly what makes digest auto-merge safe.
 | Vendored `.repo` drift (Tailscale/Mullvad/NVIDIA-ct) | `vendor-drift-watch.yml` (weekly) | Opens an issue; human refresh |
 | Layered `dnf` packages | the scheduled / on-merge rebuild | Auto (pulled live each build) |
 | Scheduled rebuild | `build.yml` `cron: '05 10 * * MON'` | Weekly |
+| Publish to GHCR (push/sign/attest) | `production-signing` environment gate (PR #41) | **Manual** one-click approval per publishing run |
 | Customer fetch/stage | `bootc-fetch-apply-updates.timer` | Auto (~8h), **no reboot** |
 | Customer apply (reboot) | operator | **Manual**; a login banner nudges when an update is staged (#32) |
 
-Renovate is the **sole** dependency bot (Dependabot retired, PR #20) and runs
-with **no schedule** so security PRs surface promptly; every Renovate PR is
-auto-assigned to the maintainer (PR #22).
+Renovate is the **sole** dependency bot (Dependabot retired, PR #20). It runs
+on a weekly Monday schedule with a 3-day cool-down on *version* updates
+(PR #37); security PRs bypass the schedule and surface promptly. Every
+Renovate PR is auto-assigned to the maintainer (PR #22).
 
 ---
 
@@ -140,12 +148,14 @@ auto-assigned to the maintainer (PR #22).
 
 It reconciles two things that usually pull against each other — *closed-by-
 default / reviewed changes* and *fast security response* — by moving the human
-control gate from the **merge** to the **reboot**:
+control gate from the **merge** to two cheap later points: the one-click
+**publish approval** and the customer's **reboot**:
 
 - Pinning by digest keeps the supply chain reviewed (every base is a digest in
   git history).
-- Auto-merging *green* digest bumps makes new images available within ~1h of
-  upstream, with no human in the loop.
+- Auto-merging *green* digest bumps takes code review out of the hot path; the
+  remaining human touch before publish is a one-click `production-signing`
+  approval, not a review.
 - The coupling check is the safety interlock that makes that automation safe.
 - The fetch-only timer means the customer still decides *when* a change takes
   effect, so nothing automated ever interrupts a running job.
