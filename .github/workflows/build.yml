@@ -48,7 +48,7 @@ env:
   SYFT_VERSION: "v1.45.0"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name}}-${{ inputs.stream_name }}
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -360,15 +360,17 @@ jobs:
         with:
           cosign-release: 'v2.6.1'
 
+      # Cosign signatures attach to the manifest *digest*, and every tag we
+      # push points at the same manifest (see Push To GHCR), so one
+      # digest-addressed signature covers all tags. Signing by digest also
+      # avoids re-resolving each tag at sign time, which could race a
+      # concurrent push moving a tag between our push and sign steps.
       - name: Sign container image
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: |
-          IMAGE_FULL="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
-          for tag in ${{ steps.metadata.outputs.tags }}; do
-            cosign sign -y --key env://COSIGN_PRIVATE_KEY $IMAGE_FULL:$tag
-          done
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
         env:
-          TAGS: ${{ steps.push.outputs.digest }}
+          DIGEST: ${{ steps.push.outputs.digest }}
           COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
 
