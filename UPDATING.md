@@ -10,7 +10,13 @@ customer-facing runtime behaviour, see the **Updates** section of
 
 ## What happens without you
 
-These run on their own; you only review/merge (and most don't even need that):
+These open and merge on their own; you only review/merge (and most don't even
+need that). One caveat applies to all of them: **nothing publishes without
+you.** Every run that pushes to the registry — push to `main`, the weekly
+cron, `workflow_dispatch` — pauses at the `production-signing` environment
+until a maintainer approves it in the Actions UI (PR #41, KEY-POLICY.md
+"GitHub Environment runbook"). Automation gets changes *merged* unattended;
+the registry only moves after your approval click.
 
 - **Base image digest bumps** (`kinoite-main`, `akmods-nvidia-open`, the variant
   base) — Renovate opens a PR, assigns it to you, and **auto-merges it once CI
@@ -23,8 +29,13 @@ These run on their own; you only review/merge (and most don't even need that):
 - **Weekly rebuild** — `build.yml` `cron: '05 10 * * MON'` refreshes the
   ~20 layered `dnf` packages.
 
-Renovate runs with **no schedule**, so it reacts within hours of an upstream
-change. It is the only dependency bot (Dependabot was retired).
+Renovate runs on a **weekly schedule** — before 09:00 UTC Mondays, just ahead
+of the 10:05 rebuild cron — and *version* updates additionally wait out a
+3-day cool-down so yanked or broken upstream releases never reach a PR
+(PR #37). Security/vulnerability PRs bypass both and open at any time. To
+force a run mid-week (e.g. to pick up a fresh `kinoite-main` digest), tick the
+checkbox on the **Dependency Dashboard** issue. Renovate is the only
+dependency bot (Dependabot was retired).
 
 ---
 
@@ -69,7 +80,8 @@ a rebuild. To pull it now instead of waiting for the weekly cron:
 
 - **Actions → "Build container image" → Run workflow** (`workflow_dispatch`) on
   `main`. The rebuild re-pulls all layered packages at their current versions
-  and republishes `:latest`.
+  and republishes `:latest`. The run pauses at the `production-signing`
+  environment — approve it, or nothing publishes.
 
 ### 3. Responding to a Fedora kernel/security advisory
 
@@ -78,8 +90,10 @@ You consume `kinoite-main`, not Fedora directly, so the actionable event is
 
 1. If a Renovate `kinoite-main` PR is already open → review and merge (or let it
    auto-merge once green). Handle the coupling dance (#1) if the check fails.
-2. If no PR yet, ublue may not have rebuilt with the fix. Don't hand-edit the
-   digest ahead of ublue — you'd lose the matched akmods build.
+2. If no PR yet, either Renovate hasn't run (it's scheduled weekly — force a
+   run from the Dependency Dashboard issue) or ublue hasn't rebuilt with the
+   fix. Don't hand-edit the digest ahead of ublue — you'd lose the matched
+   akmods build.
 3. Tell customers to reboot if it's urgent (the fix is staged, not active, until
    they do — a login banner reminds them (`emryk-update-nudge`, SECURITY-TODO #32)).
 

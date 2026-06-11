@@ -14,8 +14,26 @@ on:
   push:
     branches:
       - main
+    # Mirrors NONIMAGE_RE in the "Detect image-relevant changes" step below —
+    # keep the two lists in sync. A docs/CI-config-only PR already skips the
+    # build; without this mirror, merging it would still trigger a full
+    # rebuild AND republish, moving :latest (new dated tags, customer
+    # machines staging a no-op update).
     paths-ignore:
-      - '**/README.md'
+      - '**.md'
+      - 'docs/**'
+      - '.docs/**'
+      - '.claude/**'
+      - 'disk_config/**'
+      - 'renovate.json'
+      - '.github/renovate.json5'
+      - '.github/workflows/renovate-notify.yml'
+      - '.github/workflows/vendor-drift-watch.yml'
+      - '.github/workflows/build-disk.yml'
+      - 'LICENSE'
+      - 'Justfile'
+      - 'artifacthub-repo.yml'
+      - '.gitignore'
   workflow_dispatch:
 
 env:
@@ -70,7 +88,8 @@ jobs:
       # (green), so branch protection + Renovate auto-merge keep working; only
       # the heavy steps are skipped. Fail-open: any path NOT listed forces a
       # full build. Pushes to main, schedules and manual runs always build, so
-      # the publish path is untouched.
+      # the publish path is untouched. NONIMAGE_RE must stay in sync with the
+      # push paths-ignore list at the top of this file.
       - name: Detect image-relevant changes
         id: changes
         env:
