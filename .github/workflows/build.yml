@@ -27,7 +27,7 @@ env:
   DEFAULT_TAG: "latest"
   # Pinned for reproducibility; bumped by renovate (SECURITY-TODO #14).
   GRYPE_VERSION: "v0.113.0"
-  SYFT_VERSION: "v1.45.0"
+  SYFT_VERSION: "v1.45.1"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name}}-${{ inputs.stream_name }}
