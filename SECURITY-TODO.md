@@ -465,16 +465,21 @@ new ones when threat-model assumptions change.
     SECURITY.md document the move to `:latest`.
 
 - [ ] **34. `cosign verify --key` fails under cosign v3.**
-  The published image verifies cleanly with cosign v2.6.1 (the version
-  the pipeline signs with) but fails under cosign v3.x — which is what
-  a customer following the README gets if they install current cosign.
-  README now documents the v2 requirement as an interim measure.
-  To do: reproduce against a current published digest, root-cause
-  (v3's bundle-format/verification defaults are the suspects), then
-  either adjust the signing flags so v2- and v3-produced/consumed
-  signatures coexist, or document the exact v3 flags that verify our
-  v2 signatures. Customer-facing verification instructions must work
-  with whatever `brew install cosign` / distro packages ship today.
+  Observed 2026-06-05: `cosign verify --key cosign.pub …:latest` fails
+  under cosign v3.0.6 with `no matching attestations: expected key
+  signature, not certificate` — by tag, by digest, and with
+  `--insecure-ignore-tlog`. The same command under v2.6.1 (the version
+  the pipeline signs with) returns VERIFIED, so the signature itself is
+  good; this is a v3 verify-side behavior change. Leading hypothesis:
+  v3 enumerates the keyless (Fulcio-cert) provenance/SBOM OCI referrers
+  and trips on them when `--key` is given. A customer installing
+  current cosign and following the README hits a verification failure —
+  worse optics than no signing. README now documents the v2 requirement
+  as an interim measure. To do: confirm the referrer hypothesis against
+  a current published digest, then find the v3 invocation that scopes
+  verification to the `.sig` (or adjust signing) so the documented
+  command works on whatever `brew install cosign` / distro packages
+  ship today.
 
 ---
 
