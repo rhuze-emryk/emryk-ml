@@ -49,7 +49,7 @@ Emryk ML ships as **one image** — `:latest`. Roll forward with `bootc upgrade`
 
 ### Optional recipes
 
-The base is kept minimal and vendor-neutral; capabilities you might want are documented as opt-in recipes rather than baked in:
+The base is kept minimal and vendor-neutral — with one deliberate exception, Tailscale, which is the management plane (see "Remote management" below for why, and for the self-hosted escape hatch). Capabilities you might want are documented as opt-in recipes rather than baked in:
 
 - **Private egress (VPN).** Route traffic through a Mullvad exit node via the Tailscale already in the image — privacy without embedding another vendor. See [`docs/recipes/private-egress.md`](./docs/recipes/private-egress.md).
 - **Unsloth Studio (rootless).** See [`docs/recipes/unsloth-studio.md`](./docs/recipes/unsloth-studio.md).
@@ -61,6 +61,8 @@ Earlier releases published a `:latest-private-ml` variant (base + the Mullvad VP
 ## Remote management
 
 Cockpit (browser-based system management) is installed and enabled on every build, but is **only reachable over Tailscale** — never over the LAN or the open internet.
+
+**Tailscale is the one vendor this image commits to.** Its client is baked in, `tailscaled` is enabled by default, and the whole management perimeter is built around the tailnet. That's a deliberate trade — a managed cloud workstation needs a management plane, and this is the best one available — but it is a real dependency on a commercial service, and we'd rather say so than claim total neutrality. The escape hatch: `tailscaled` also works against [Headscale](https://github.com/juanfont/headscale), a self-hosted open-source control server (`sudo tailscale up --login-server https://<your-headscale>`), so the coordination layer can be taken off Tailscale's SaaS without changing the image. Features that live in Tailscale's commercial control plane — notably the Mullvad exit nodes used by the [private-egress recipe](./docs/recipes/private-egress.md) — are not available via Headscale.
 
 Mechanism — the image declares its perimeter explicitly:
 
@@ -132,6 +134,13 @@ cosign verify \
     ghcr.io/rhuze-emryk/emryk-ml:latest
 ```
 
+> **Use cosign v2.x for this check (for now).** The command above works with
+> cosign v2 (our pipeline signs with v2.6.1) but is currently known to fail
+> against this image's signatures under cosign v3. Root cause is being
+> investigated (SECURITY-TODO #34); until it's resolved, verify with a v2
+> release. The `gh attestation` checks below are unaffected — they don't use
+> cosign at all.
+
 **Enforced on installed systems.** Builds containing this policy ship
 `/etc/containers/policy.json` requiring sigstore-signed pulls from
 `ghcr.io/rhuze-emryk/`, verified against the cosign public key installed at
@@ -172,7 +181,7 @@ gh attestation download \
 
 These attestations are independent of the cosign signature — three different trust signals that any one of which can be verified without trusting the other two.
 
-Disk-image artifacts produced by `build-disk.yml` (qcow2, anaconda-iso) also ship SLSA build provenance, signed via the same Sigstore-OIDC path (no long-lived key). If you received a disk image out of band, verify it before booting:
+Disk-image artifacts produced by `build-disk.yml` (qcow2) also ship SLSA build provenance, signed via the same Sigstore-OIDC path (no long-lived key). If you received a disk image out of band, verify it before booting:
 
 ```bash
 gh attestation verify path/to/disk.qcow2 --owner rhuze-emryk
@@ -212,7 +221,7 @@ Containerfile                       Multi-stage build: akmods-nvidia-open → ki
 build_files/build.sh                Package installs, repo setup, service config
 .github/workflows/
   build.yml                         Build, push to GHCR, sign with cosign; akmods↔kernel coupling check; weekly cron
-  build-disk.yml                    Disk image builds (qcow2, raw, iso)
+  build-disk.yml                    Disk image builds (qcow2 — the cloud-image deliverable)
   vendor-drift-watch.yml            Weekly diff of vendored .repo files vs upstream; opens an issue on drift
 cosign.pub                          Public signing key
 renovate.json                       Renovate (sole dep bot): pins action SHAs + base digests, auto-merges green digest bumps

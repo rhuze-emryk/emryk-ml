@@ -324,22 +324,21 @@ new ones when threat-model assumptions change.
   the `shellcheck` step in `build.yml`, which only lints `build.sh`. Add
   `shellcheck build_files/verify-payload-rpm-owned.sh` to that lint step.
 
-- [ ] **22. Sign by digest instead of per-tag.**
-  `build.yml` iterates `for tag in …; cosign sign --key …
+- [x] **22. Sign by digest instead of per-tag.** _(2026-06-11)_
+  `build.yml` iterated `for tag in …; cosign sign --key …
   $IMAGE_FULL:$tag`. All tags resolve to the same digest, so this
-  creates N signature manifests for identical content. Replace with a
-  single `cosign sign --key … $IMAGE_FULL@$DIGEST` using the digest
-  already captured by `--digestfile`. No security improvement;
-  registry-hygiene cleanup that also shortens the publish loop.
+  created N signature manifests for identical content. Resolved in
+  PR #47: a single `cosign sign --key … $IMAGE_FULL@$DIGEST` using the
+  digest already captured by `--digestfile`; the dead `TAGS` env var
+  became the used `DIGEST`. Also removes tag re-resolution at sign
+  time, so a concurrent push can no longer change what gets signed.
 
-- [ ] **23. Drop dead inputs from the `build.yml` concurrency key.**
-  `build.yml` references `${{ inputs.brand_name }}` and
+- [x] **23. Drop dead inputs from the `build.yml` concurrency key.** _(2026-06-11)_
+  `build.yml` referenced `${{ inputs.brand_name }}` and
   `${{ inputs.stream_name }}` in its concurrency group, but no
-  `inputs:` of those names are declared on the workflow — both
-  evaluate empty today. No security impact, but a future template
-  merge could declare matching input names and silently change the
-  concurrency behavior. Either delete the references or declare the
-  inputs explicitly.
+  `inputs:` of those names were declared on the workflow — both
+  evaluated empty. Resolved in PR #47 by deleting the references;
+  effective grouping behavior unchanged.
 
 - [ ] **27. Polish `vendor-drift-watch.yml`.**
   Three small papercuts surfaced in the post-PR-#18 review of the new
@@ -465,6 +464,23 @@ new ones when threat-model assumptions change.
     anyone pinned to them, but no new builds or security updates. README and
     SECURITY.md document the move to `:latest`.
 
+- [ ] **34. `cosign verify --key` fails under cosign v3.**
+  Observed 2026-06-05: `cosign verify --key cosign.pub …:latest` fails
+  under cosign v3.0.6 with `no matching attestations: expected key
+  signature, not certificate` — by tag, by digest, and with
+  `--insecure-ignore-tlog`. The same command under v2.6.1 (the version
+  the pipeline signs with) returns VERIFIED, so the signature itself is
+  good; this is a v3 verify-side behavior change. Leading hypothesis:
+  v3 enumerates the keyless (Fulcio-cert) provenance/SBOM OCI referrers
+  and trips on them when `--key` is given. A customer installing
+  current cosign and following the README hits a verification failure —
+  worse optics than no signing. README now documents the v2 requirement
+  as an interim measure. To do: confirm the referrer hypothesis against
+  a current published digest, then find the v3 invocation that scopes
+  verification to the `.sig` (or adjust signing) so the documented
+  command works on whatever `brew install cosign` / distro packages
+  ship today.
+
 ---
 
 ## Deliberately out of scope
@@ -516,3 +532,5 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-28 — **Backlog reopened** with items 18–23 from a full-codebase security review. Top concern is #18 (Unsloth Studio quadlet: unpinned `:latest` docker.io pull, root-privileged container with full GPU, no-auth loopback bind that trusts every local user). #19 vendors the last two curl-piped vendor `.repo` files. #20 follows through on #3's "flip to `--fail-on critical` once triage exists." #21–23 are CI/registry hygiene.
 - 2026-05-28 — items 18 + 19 closed via the private-ml pivot (PRs #11–#16) and the drift-watch workflow (PR #18). Item 18 obsoleted by removal (Quadlet deleted in PR #11; rootless recipe at `docs/recipes/unsloth-studio.md` in PR #12). Item 19 closed by vendoring `build_files/mullvad.repo` + `build_files/nvidia-container-toolkit.repo` (PR #14) and converting the install scripts to `cp` (PRs #14 + #16). Drift-watch follow-up landed in PR #18 (#17 added the SECURITY-TODO entries on main).
 - 2026-05-28 — post-pivot code review surfaced six new items (#24–#29). #24 closes the `gpgcheck=0` gap on the vendored nvidia repo and amends #19's overbroad signature-verification claim. #25 unwinds PR #13's redundant duplication of upstream akmods-provided `nvidia-container-toolkit` + CDI generator service. #26 fixes a path-filter gap that makes drift-refresh PRs skip variant CI. #27–#29 polish the new drift-watch workflow, normalise file-copy permissions, and tighten CI path filters so docs-only PRs don't trigger full image builds. Trivial stale-doc fixes (recipe prerequisites table, README variant-tag descriptions, drift-watch cron comment) landed inline with this update.
+- 2026-06-11 — items 22 + 23 closed (PR #47): publish loop now signs the manifest digest once instead of per-tag (no tag re-resolution at sign time), and the dead `inputs.brand_name`/`inputs.stream_name` references were dropped from the `build.yml` concurrency group.
+- 2026-06-11 — repo-review remainders landed: README/`private-egress.md` now state the Tailscale dependency explicitly (one deliberate vendor commitment; Headscale documented as the self-hosted escape hatch; Mullvad-exit-node recipe flagged as Tailscale-SaaS-only). `anaconda-iso` leg removed from `build-disk.yml` and `iso-kde.toml` deleted — the ISO/local installer was dropped from the roadmap; qcow2 (cloud image) is the deliverable. Item 34 opened for the cosign v3 `verify --key` failure; README documents the v2 requirement until it's root-caused.

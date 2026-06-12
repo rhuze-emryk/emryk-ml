@@ -7,6 +7,14 @@ the vendor is acquired, changes policy, or its package repo moves, every image
 carries that liability. So private egress is now something you **enable**, not
 something we **embed**.
 
+To be honest about the boundary: that same argument applies in principle to
+Tailscale, which *is* embedded as the management plane. That is the image's one
+deliberate vendor commitment — see "Remote management" in the README, including
+the self-hosted [Headscale](https://github.com/juanfont/headscale) escape
+hatch. Option A below leans further into Tailscale's commercial service (it's
+a paid add-on on their SaaS control plane); Option B is the route that doesn't.
+Pick with eyes open.
+
 There are two routes. The first needs nothing installed on the host and is the
 recommended one.
 
@@ -20,7 +28,9 @@ it off at any time with one command.
 
 1. In the **Tailscale admin console**, enable **Mullvad** (it's a paid add-on —
    check current pricing/terms there; it's billed through Tailscale, you don't
-   need a separate Mullvad account).
+   need a separate Mullvad account). This feature lives in Tailscale's
+   commercial control plane: it is **not available on a self-hosted Headscale**
+   tailnet — if you run Headscale, use Option B.
 2. On the workstation (already joined to your tailnet via `tailscaled`):
 
    ```bash

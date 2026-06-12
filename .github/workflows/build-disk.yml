@@ -20,7 +20,6 @@ on:
       - main
     paths:
       - './disk_config/disk.toml'
-      - './disk_config/iso-kde.toml'
       - './.github/workflows/build-disk.yml'
 
 env:
@@ -39,8 +38,11 @@ jobs:
     runs-on: ${{ inputs.platform == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     strategy:
       fail-fast: false
+      # qcow2 only: the ISO / local-installer leg was dropped from the
+      # roadmap — the cloud image is the v1 deliverable. The matrix stays
+      # so a VMDK/OVA leg can be added if the deployment target needs it.
       matrix:
-        disk-type: ["qcow2", "anaconda-iso"]
+        disk-type: ["qcow2"]
     permissions:
       contents: read
       packages: read
@@ -84,7 +86,7 @@ jobs:
         uses: osbuild/bootc-image-builder-action@31d72f795564fb09943f0705025e75748da3a2d1 # main as of 2026-05-04 (no useful tagged releases)
         with:
           builder-image: ${{ env.BIB_IMAGE }}
-          config-file: ${{ matrix.disk-type == 'anaconda-iso' && './disk_config/iso-kde.toml' || './disk_config/disk.toml' }}
+          config-file: ./disk_config/disk.toml
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           chown: ${{ env.USER_UID }}:${{ env.USER_GID }}
           types: ${{ matrix.disk-type }}
