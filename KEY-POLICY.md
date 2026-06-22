@@ -146,7 +146,7 @@ To move `SIGNING_SECRET` from a repository-level secret to an environment-scoped
    environment: production-signing
    ```
    at the job level (sibling of `runs-on:`).
-7. Commit, push. The next push to `main` will pause at the signing job and require the configured reviewer to approve before the secret is exposed to the workflow.
+7. Commit, push. The next *publishing* run — the weekly Monday build or a manual **Run workflow** — will pause at the signing job and require the configured reviewer to approve before the secret is exposed. (A plain push to `main` builds and tests but no longer reaches the signing step, so trigger a `workflow_dispatch` if you want to exercise the gate immediately.)
 
 Note: this **does not** prevent a maintainer who can approve from authorizing a malicious workflow. It prevents accidental exposure (e.g., a PR that accidentally references the secret) and gives a human a chance to inspect each signing event.
 

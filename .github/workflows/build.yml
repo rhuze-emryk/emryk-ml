@@ -5,20 +5,27 @@ on:
     branches:
       - main
   schedule:
-    # Weekly, not nightly. The base is digest-pinned, so a scheduled rebuild
-    # only refreshes the ~20 dnf-layered packages — kernel/userland/driver
-    # arrive via Renovate digest bumps on a separate track, not via this cron.
-    # Monday aligns with vendor-drift-watch; fire workflow_dispatch for an
-    # urgent out-of-band layered-package fix. (See SECURITY-TODO #31.)
+    # Weekly, not nightly — and this scheduled run is the ONLY routine publish.
+    # Pushes to main build-and-test but do NOT publish (see the publish-step
+    # `if:` guards below): the registry moves only on this Monday cron or a
+    # manual workflow_dispatch. That gives the maintainer one predictable
+    # approval per week instead of one per merge.
+    #
+    # The base is digest-pinned, so a scheduled rebuild only refreshes the ~20
+    # dnf-layered packages — kernel/userland/driver arrive via Renovate digest
+    # bumps (auto-merged to main during the week, then shipped by the next run
+    # of this cron). Monday aligns with vendor-drift-watch; fire
+    # workflow_dispatch for an urgent fix that can't wait for Monday.
+    # (See SECURITY-TODO #31.)
     - cron: '05 10 * * MON'  # 10:05 UTC Mondays
   push:
     branches:
       - main
     # Mirrors NONIMAGE_RE in the "Detect image-relevant changes" step below —
-    # keep the two lists in sync. A docs/CI-config-only PR already skips the
-    # build; without this mirror, merging it would still trigger a full
-    # rebuild AND republish, moving :latest (new dated tags, customer
-    # machines staging a no-op update).
+    # keep the two lists in sync. Pushes to main run a build to validate that
+    # main stays buildable, but they no longer publish; this list keeps a
+    # docs/CI-config-only merge from spending ~8 min on a build that can't
+    # change the image anyway.
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -48,7 +55,13 @@ env:
   SYFT_VERSION: "v1.45.0"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  # Suffix the group with whether this run publishes (schedule/dispatch) so
+  # publishing runs and non-publishing build runs never share a group. Without
+  # this, a push to main during the weekly publish — or while it waits at the
+  # production-signing approval gate — would land in the same group and CANCEL
+  # the publish (cancel-in-progress), so the week's release could silently
+  # vanish just as you go to approve it. PR runs stay isolated by their own ref.
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
 jobs:
@@ -59,10 +72,13 @@ jobs:
     # Gate SIGNING_SECRET behind the `production-signing` environment
     # (required-reviewer approval, restricted to main) — KEY-POLICY.md
     # "GitHub Environment runbook". Resolves to the environment ONLY for the
-    # publishing paths (push/schedule/dispatch on main); on pull_request it is
-    # empty, so PR builds are never gated and CI stays fast. The signing step
-    # reads SIGNING_SECRET, which is environment-scoped once moved there.
-    environment: ${{ (github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) && 'production-signing' || '' }}
+    # publishing paths (the Monday schedule + manual workflow_dispatch on main);
+    # on pull_request AND on ordinary pushes to main it is empty, so neither PR
+    # builds nor post-merge validation builds are gated. That is the whole point
+    # of the weekly cadence: the approval prompt fires once a week on the
+    # publish, not once per merge. The signing step reads SIGNING_SECRET, which
+    # is environment-scoped once moved there.
+    environment: ${{ ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) && 'production-signing' || '' }}
 
     permissions:
       contents: read
@@ -87,9 +103,9 @@ jobs:
       # itself still runs and reports the required "Build and push image" check
       # (green), so branch protection + Renovate auto-merge keep working; only
       # the heavy steps are skipped. Fail-open: any path NOT listed forces a
-      # full build. Pushes to main, schedules and manual runs always build, so
-      # the publish path is untouched. NONIMAGE_RE must stay in sync with the
-      # push paths-ignore list at the top of this file.
+      # full build. Pushes to main, schedules and manual runs always build;
+      # only the scheduled and manual runs go on to publish. NONIMAGE_RE must
+      # stay in sync with the push paths-ignore list at the top of this file.
       - name: Detect image-relevant changes
         id: changes
         env:
@@ -314,11 +330,15 @@ jobs:
       #       podman tag $IMAGE ${{ env.IMAGE_NAME }}:$tag
       #     done
 
-      # These `if` statements are so that pull requests for your custom images do not make it publish any packages under your name without you knowing
-      # They also check if the runner is on the default branch so that things like the merge queue (if you enable it), are going to work
+      # These `if` guards keep the publish path (login -> push -> sign ->
+      # attest) to the Monday schedule and manual workflow_dispatch on main
+      # only. Pull requests and ordinary pushes to main build-and-test but never
+      # publish, so a merge never moves the registry on its own — the weekly run
+      # (or an explicit "Run workflow") does. The ref check stops a dispatch on
+      # a non-default branch from publishing.
       - name: Login to GitHub Container Registry
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -331,7 +351,7 @@ jobs:
       # identical across them — capture it once via --digestfile.
       - name: Push To GHCR
         id: push
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: |
           IMAGE_FULL="${IMAGE_REGISTRY}/${IMAGE_NAME}"
           digest=""
@@ -356,7 +376,7 @@ jobs:
       # to consume. For more details, review the image signing section of the README.
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         with:
           cosign-release: 'v2.6.1'
 
@@ -366,7 +386,7 @@ jobs:
       # avoids re-resolving each tag at sign time, which could race a
       # concurrent push moving a tag between our push and sign steps.
       - name: Sign container image
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: |
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
         env:
@@ -380,7 +400,7 @@ jobs:
       # verify with `gh attestation verify` against the published artifact
       # alone — no GitHub API trust needed beyond the registry.
       - name: Attest build provenance
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
@@ -388,7 +408,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest SBOM
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}

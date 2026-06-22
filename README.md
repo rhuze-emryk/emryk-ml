@@ -4,7 +4,7 @@
 
 A managed [bootc](https://github.com/bootc-dev/bootc) image for cloud ML workstations. Built on [Universal Blue's](https://universal-blue.org/) `kinoite-main` (Fedora Kinoite + UBlue fixes) with NVIDIA open kernel modules, KDE Plasma, and a container-first dev toolchain pre-configured.
 
-This is the public image foundation for the [Emryk Workstation](https://emryk.com) product. It builds to `ghcr.io/rhuze-emryk/emryk-ml` on every push to `main`.
+This is the public image foundation for the [Emryk Workstation](https://emryk.com) product. It publishes to `ghcr.io/rhuze-emryk/emryk-ml` weekly (the Monday build), or on demand via **Run workflow**; every push to `main` is built and tested but does not move the registry.
 
 ## What's included
 
