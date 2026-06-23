@@ -49,7 +49,7 @@ Emryk ML ships as **one image** — `:latest`. Roll forward with `bootc upgrade`
 
 ### Optional recipes
 
-The base is kept minimal and vendor-neutral — with one deliberate exception, Tailscale, which is the management plane (see "Remote management" below for why, and for the self-hosted escape hatch). Capabilities you might want are documented as opt-in recipes rather than baked in:
+The base is **NVIDIA-targeted today** — the GPU stack (open kernel modules, `nvidia-container-toolkit`, CDI generation, nouveau blacklist) is baked in. Beyond that it's kept minimal, with one further deliberate vendor commitment — Tailscale, the management plane (see "Remote management" below for why, and for the self-hosted escape hatch). Other capabilities are documented as opt-in recipes rather than baked in:
 
 - **Private egress (VPN).** Route traffic through a Mullvad exit node via the Tailscale already in the image — privacy without embedding another vendor. See [`docs/recipes/private-egress.md`](./docs/recipes/private-egress.md).
 - **Unsloth Studio (rootless).** See [`docs/recipes/unsloth-studio.md`](./docs/recipes/unsloth-studio.md).
