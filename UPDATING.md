@@ -1,53 +1,81 @@
 # Updating Emryk ML (maintainer runbook)
 
-Step-by-step procedures for keeping the image current. For *why* it works this
-way — the ancestry, the two planes, the automation model — read
-[`docs/update-strategy.md`](docs/update-strategy.md) first. For the
-customer-facing runtime behaviour, see the **Updates** section of
+This is your checklist. For *why* it works this way — the ancestry, the two
+planes, the automation model — read [`docs/update-strategy.md`](docs/update-strategy.md).
+For the customer-facing runtime behaviour, see the **Updates** section of
 [`README.md`](README.md).
 
 ---
 
-## What happens without you
+## The one rule
 
-These open and merge on their own; you only review/merge (and most don't even
-need that). One caveat applies to all of them: **nothing publishes without
-you.** Every run that pushes to the registry — push to `main`, the weekly
-cron, `workflow_dispatch` — pauses at the `production-signing` environment
-until a maintainer approves it in the Actions UI (PR #41, KEY-POLICY.md
-"GitHub Environment runbook"). Automation gets changes *merged* unattended;
-the registry only moves after your approval click.
+> **Merging never ships. The image publishes once a week — the Monday build —
+> or when you click *Run workflow*. The Monday build is the only time you
+> approve a signature.**
 
-- **Base image digest bumps** (`kinoite-main`, `akmods-nvidia-open`, the variant
-  base) — Renovate opens a PR, assigns it to you, and **auto-merges it once CI
-  is green**. New kernel/userland/driver lands here.
-- **GitHub Action SHAs** and `GRYPE_VERSION` / `SYFT_VERSION` — Renovate PR,
-  assigned to you, human-merged.
-- **Known-CVE dependency fixes** — Renovate, labelled `security`, human-merged.
-- **Vendored `.repo` drift** — `vendor-drift-watch.yml` opens/updates an issue
-  weekly if Tailscale/Mullvad/NVIDIA-toolkit upstream changed.
-- **Weekly rebuild** — `build.yml` `cron: '05 10 * * MON'` refreshes the
-  ~20 layered `dnf` packages.
+Everything Renovate merges during the week just sits on `main`, tested but
+unpublished, until the Monday `05 10 * * MON` build picks it all up and ships it
+in one signed publish. Pushing to `main` — your merges, Renovate's auto-merges —
+builds and tests the image but **does not** touch the registry. So you are never
+asked to approve anything at a random moment: only on Monday, or when you
+deliberately start a publish yourself.
 
-Renovate runs on a **weekly schedule** — before 09:00 UTC Mondays, just ahead
-of the 10:05 rebuild cron — and *version* updates additionally wait out a
-3-day cool-down so yanked or broken upstream releases never reach a PR
-(PR #37). Security/vulnerability PRs bypass both and open at any time. To
-force a run mid-week (e.g. to pick up a fresh `kinoite-main` digest), tick the
-checkbox on the **Dependency Dashboard** issue. Renovate is the only
-dependency bot (Dependabot was retired).
+If you do nothing, nothing publishes. Last week's signed image stays live. That
+is always a safe state.
 
 ---
 
-## What needs you
+## Your Monday routine
 
-### 1. Rolling the base kernel forward (the coupling dance)
+Once, Monday morning. Top to bottom. Skipping any step is safe — it just means a
+change waits another week.
 
-This is the **one** routine task automation can't finish, because the NVIDIA
-`akmods` tag encodes a kernel version that Renovate's digest-pinning can't
-change. You'll know it's needed when **a Renovate `kinoite-main` digest PR fails
-the "Verify NVIDIA akmods kernel matches base kernel" check** with a message
-like:
+1. **Open the signals.** The Renovate **Dependency Dashboard** issue (what's
+   queued / what auto-merged) and the
+   [Renovate activity log (#36)](https://github.com/rhuze-emryk/emryk-ml/issues/36)
+   (whether last week's build was green).
+2. **Merge the PRs that need you.** Renovate auto-merges green *digest* bumps on
+   its own — leave those. You hand-merge only: GitHub Action SHA bumps,
+   `GRYPE`/`SYFT` version bumps, and `security`-labelled CVE fixes. Merge the
+   green ones.
+3. **If a `kinoite-main` PR is red on the kernel check** → do the *coupling
+   dance* ([Reference §1](#1-the-coupling-dance--rolling-the-base-kernel-forward)).
+   If you're unsure ublue has published the matching `akmods-nvidia-open` image
+   yet, **leave it unmerged.** Waiting is always safe; merging a mismatch is not.
+4. **Approve the publish.** The Monday build runs (10:05 UTC) and pauses at the
+   `production-signing` environment. Go to **Actions → the running "Build
+   container image" run → Review deployments → Approve**. That one click signs
+   and ships `:latest`. (Skip it and last week's image stays live — also safe.)
+5. **Done.** Optionally confirm what shipped
+   ([Reference §4](#4-after-a-publish--verify-what-shipped)).
+
+That's the whole week. Everything below is for the exceptions.
+
+---
+
+## When something genuinely can't wait
+
+A critical CVE in a layered package, or a kernel fix you need out *today* rather
+than next Monday:
+
+- **Actions → "Build container image" → Run workflow → Branch: `main` → Run.**
+  This is a manual publish: it rebuilds, pauses at `production-signing` for your
+  approval, then ships. Same single approval click as Monday, just on demand.
+  This is the *only* way to publish off-schedule, and that's deliberate.
+
+If the urgent fix is a `security`-labelled Renovate PR, **merge it first, then
+run the workflow** — merging alone won't ship it (see the one rule).
+
+---
+
+## Reference
+
+### 1. The coupling dance — rolling the base kernel forward
+
+The **one** routine task automation can't finish, because the NVIDIA `akmods`
+tag encodes a kernel version that Renovate's digest-pinning can't change. You'll
+know it's needed when **a Renovate `kinoite-main` digest PR fails the "Verify
+NVIDIA akmods kernel matches base kernel" check** with a message like:
 
 > kinoite-main now ships kernel `7.1.2-200.fc44.x86_64` but the
 > akmods-nvidia-open tag in Containerfile is pinned to `7.0.4-200.fc44.x86_64`…
@@ -65,49 +93,48 @@ Procedure:
    and paste it now).
 3. Push to the Renovate PR branch (or open your own). The coupling check should
    now pass.
-4. Merge. (If you edited the akmods tag yourself, this is a tag change, not a
-   `digest` update, so it won't auto-merge — merge it by hand.)
+4. Merge. (Editing the akmods tag yourself is a tag change, not a `digest`
+   update, so it won't auto-merge — merge it by hand.)
 
 > If ublue hasn't yet published an `akmods-nvidia-open` image for the new
 > kernel, **don't merge the kinoite-main bump** — wait. Merging would ship
 > mismatched modules. The coupling check protects you here.
 
-### 2. Urgent out-of-band fix (layered package can't wait for Monday)
-
-A CVE in a layered package (e.g. `cockpit`, `tailscale`,
-`nvidia-container-toolkit`) doesn't ride a digest bump — it's only refreshed by
-a rebuild. To pull it now instead of waiting for the weekly cron:
-
-- **Actions → "Build container image" → Run workflow** (`workflow_dispatch`) on
-  `main`. The rebuild re-pulls all layered packages at their current versions
-  and republishes `:latest`. The run pauses at the `production-signing`
-  environment — approve it, or nothing publishes.
-
-### 3. Responding to a Fedora kernel/security advisory
-
-You consume `kinoite-main`, not Fedora directly, so the actionable event is
-**"kinoite-main's digest moved"**, which Renovate already chases. To act fast:
-
-1. If a Renovate `kinoite-main` PR is already open → review and merge (or let it
-   auto-merge once green). Handle the coupling dance (#1) if the check fails.
-2. If no PR yet, either Renovate hasn't run (it's scheduled weekly — force a
-   run from the Dependency Dashboard issue) or ublue hasn't rebuilt with the
-   fix. Don't hand-edit the digest ahead of ublue — you'd lose the matched
-   akmods build.
-3. Tell customers to reboot if it's urgent (the fix is staged, not active, until
-   they do — a login banner reminds them (`emryk-update-nudge`, SECURITY-TODO #32)).
-
-### 4. Refreshing a vendored `.repo` file
+### 2. Refreshing a vendored `.repo` file
 
 When `vendor-drift-watch.yml` files an issue: review the diff in the issue,
-confirm the upstream change is legitimate, then run the `curl … -o
-build_files/<file>.repo` command from the issue and open a PR. Vendoring is
-deliberate (SECURITY-TODO #6/#19) — the point is that a CDN change can't reach
-the build until a PR lands here.
+confirm the upstream change is legitimate, then run the
+`curl … -o build_files/<file>.repo` command from the issue and open a PR.
+Vendoring is deliberate (SECURITY-TODO #6/#19) — the point is that a CDN change
+can't reach the build until a PR lands here.
 
----
+### 3. What happens without you
 
-## After any base bump — verify what published
+These open and merge on their own; you only review/merge (and most don't even
+need that). None of them publish — see [the one rule](#the-one-rule): the
+registry moves only on the Monday build or a manual `workflow_dispatch`.
+
+- **Base image digest bumps** (`kinoite-main`, `akmods-nvidia-open`) — Renovate
+  opens a PR, assigns it to you, and **auto-merges once CI is green**. New
+  kernel/userland/driver lands on `main` here, and ships at the next Monday build.
+- **GitHub Action SHAs** and `GRYPE_VERSION` / `SYFT_VERSION` — Renovate PR,
+  assigned to you, human-merged.
+- **Known-CVE dependency fixes** — Renovate, labelled `security`, human-merged.
+- **Vendored `.repo` drift** — `vendor-drift-watch.yml` opens/updates an issue
+  weekly if Tailscale/NVIDIA-toolkit upstream changed.
+- **Weekly publish** — `build.yml` `cron: '05 10 * * MON'` rebuilds (refreshing
+  the ~20 layered `dnf` packages) and, after your approval, signs and ships
+  everything merged to `main` since last week.
+
+Renovate runs on a **weekly schedule** — before 09:00 UTC Mondays, just ahead of
+the 10:05 build cron — and *version* updates additionally wait out a 3-day
+cool-down so yanked or broken upstream releases never reach a PR (PR #37).
+Security/vulnerability PRs bypass both and open at any time (but still don't ship
+until a build runs). To force a Renovate run mid-week (e.g. to pick up a fresh
+`kinoite-main` digest), tick the checkbox on the **Dependency Dashboard** issue.
+Renovate is the only dependency bot (Dependabot was retired).
+
+### 4. After a publish — verify what shipped
 
 ```bash
 # Signed by us
@@ -120,16 +147,14 @@ gh attestation verify oci://ghcr.io/rhuze-emryk/emryk-ml:latest \
 
 See README **Verifying the image** for the full set (incl. SBOM).
 
-## If a published update misbehaves
+### 5. If a published update misbehaves
 
 Customer-side rollback is `sudo bootc rollback && sudo systemctl reboot`. On the
-publishing side, revert the offending PR and let the rebuild republish `:latest`
-at the prior-good content; the bad dated tag stays in the registry but `:latest`
-moves back.
+publishing side, revert the offending PR and run the workflow to republish
+`:latest` at the prior-good content; the bad dated tag stays in the registry but
+`:latest` moves back.
 
----
-
-## Required repo settings (already applied)
+### 6. Required repo settings (already applied)
 
 These make the automation work; listed so they survive a settings audit:
 
@@ -140,3 +165,6 @@ These make the automation work; listed so they survive a settings audit:
   on (`strict=false`, admins may override, no required reviews). This is what
   makes "merge only when green" enforced for *every* path; without it,
   `gh pr merge --auto` merges immediately and only Renovate self-gates on CI.
+- **`production-signing` environment** with you as a required reviewer — on.
+  This is the approval gate the Monday/dispatch publish pauses at (KEY-POLICY.md
+  "GitHub Environment runbook").

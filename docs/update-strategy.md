@@ -46,7 +46,9 @@ Most confusion about "are we getting updates?" comes from conflating these.
 
 Governed **entirely** by the `FROM … @sha256:` digests in `Containerfile`.
 Because we pin by digest, **the published image does not change until a digest
-is bumped.** A scheduled rebuild on the *same* pinned digest produces a new
+is bumped** — and even then, only once the next build publishes it (the weekly
+Monday run, or a manual dispatch; a merge alone ships nothing). A scheduled
+rebuild on the *same* pinned digest produces a new
 manifest (build timestamps/labels differ) but the **same kernel, userland, and
 driver** — only the ~20 `dnf`-layered packages can drift, since those are
 pulled live at build time.
@@ -74,8 +76,10 @@ Fedora ships fix
     mid-week from the Dependency Dashboard issue)
   → Renovate opens a digest-bump PR, auto-assigned to the maintainer
   → CI build runs (incl. the kernel↔akmods coupling check)
-  → green → Renovate AUTO-MERGES (SECURITY-TODO #31)        ← hands-off
-  → publish run pauses at the production-signing
+  → green → Renovate AUTO-MERGES to main (SECURITY-TODO #31) ← hands-off
+  → change waits on main until the weekly Monday build —
+    or a manual "Run workflow" if the fix is urgent
+  → that build pauses at the production-signing
     environment (PR #41)                                    ← maintainer approves
   → our build publishes :latest
   → customer bootc timer fetches + stages (~8h)
@@ -85,9 +89,13 @@ Fedora ships fix
 The slow links are deliberate. There is no human gate on the *merge* — review
 moved out of the hot path — but two manual gates remain: the maintainer's
 one-click `production-signing` approval before anything reaches the registry,
-and the customer's reboot, which is their call so training jobs survive. For a
-genuinely urgent kernel CVE, the operator reboots promptly (a login banner
-reminds the operator when an update is staged — SECURITY-TODO #32).
+and the customer's reboot, which is their call so training jobs survive.
+Publishing is **weekly** (the Monday build), which batches the maintainer's
+approvals into one predictable moment instead of one per merge; an urgent fix
+skips the wait via a manual "Run workflow" (UPDATING.md, "When something
+genuinely can't wait"). For a genuinely urgent kernel CVE, the operator then
+reboots promptly (a login banner reminds the operator when an update is
+staged — SECURITY-TODO #32).
 
 **Why auto-merging digests is safe here:** auto-merge only makes a *tested*
 image available — it publishes nothing (the `production-signing` approval
@@ -131,9 +139,9 @@ human. This is exactly what makes digest auto-merge safe.
 | GitHub Action SHAs, `GRYPE_VERSION`/`SYFT_VERSION` | Renovate | PR, auto-assigned, human-merged |
 | Known-CVE deps (Actions, future pip/etc.) | Renovate `osvVulnerabilityAlerts` + `security` label | PR, human-merged |
 | Vendored `.repo` drift (Tailscale/Mullvad/NVIDIA-ct) | `vendor-drift-watch.yml` (weekly) | Opens an issue; human refresh |
-| Layered `dnf` packages | the scheduled / on-merge rebuild | Auto (pulled live each build) |
-| Scheduled rebuild | `build.yml` `cron: '05 10 * * MON'` | Weekly |
-| Publish to GHCR (push/sign/attest) | `production-signing` environment gate (PR #41) | **Manual** one-click approval per publishing run |
+| Layered `dnf` packages | the scheduled rebuild | Auto (pulled live each build) |
+| Scheduled rebuild + publish | `build.yml` `cron: '05 10 * * MON'` | Weekly — the only routine publish |
+| Publish to GHCR (push/sign/attest) | weekly Monday build + manual `workflow_dispatch`, gated by the `production-signing` environment (PR #41) | **Manual** one-click approval per publishing run; a push/merge alone never publishes |
 | Customer fetch/stage | `bootc-fetch-apply-updates.timer` | Auto (~8h), **no reboot** |
 | Customer apply (reboot) | operator | **Manual**; a login banner nudges when an update is staged (#32) |
 
