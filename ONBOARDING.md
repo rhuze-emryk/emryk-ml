@@ -74,9 +74,11 @@ This framing reads as thoughtful engineering, not security theater.
 These are powerful marketing assets. Putting them on the site means a customer's security team can validate the trust story in 30 seconds without taking the marketing's word for it. Suggested page-copy patterns:
 
 ```bash
-# Anyone can verify the image we publish was signed by us:
+# Anyone can verify the image we publish was signed by us
+# (--new-bundle-format=false is required on cosign v3; harmless on v2):
 cosign verify \
     --key https://raw.githubusercontent.com/rhuze-emryk/emryk-ml/main/cosign.pub \
+    --new-bundle-format=false \
     ghcr.io/rhuze-emryk/emryk-ml:latest
 
 # Anyone can verify GitHub Actions built it from our source:

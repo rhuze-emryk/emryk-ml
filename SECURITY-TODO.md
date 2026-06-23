@@ -464,22 +464,39 @@ new ones when threat-model assumptions change.
     anyone pinned to them, but no new builds or security updates. README and
     SECURITY.md document the move to `:latest`.
 
-- [ ] **34. `cosign verify --key` fails under cosign v3.**
-  Observed 2026-06-05: `cosign verify --key cosign.pub …:latest` fails
+- [x] **34. `cosign verify --key` fails under cosign v3.** _(2026-06-23)_
+  Observed 2026-06-05: `cosign verify --key cosign.pub …:latest` failed
   under cosign v3.0.6 with `no matching attestations: expected key
   signature, not certificate` — by tag, by digest, and with
   `--insecure-ignore-tlog`. The same command under v2.6.1 (the version
-  the pipeline signs with) returns VERIFIED, so the signature itself is
-  good; this is a v3 verify-side behavior change. Leading hypothesis:
-  v3 enumerates the keyless (Fulcio-cert) provenance/SBOM OCI referrers
-  and trips on them when `--key` is given. A customer installing
-  current cosign and following the README hits a verification failure —
-  worse optics than no signing. README now documents the v2 requirement
-  as an interim measure. To do: confirm the referrer hypothesis against
-  a current published digest, then find the v3 invocation that scopes
-  verification to the `.sig` (or adjust signing) so the documented
-  command works on whatever `brew install cosign` / distro packages
-  ship today.
+  the pipeline signs with) returned VERIFIED, so the signature itself is
+  good; this is a v3 verify-side behavior change.
+
+  **Root cause (confirmed).** cosign v3 changed the default of
+  `--new-bundle-format` from `false` to `true`, so `cosign verify`
+  discovers signatures as Sigstore bundles via the OCI 1.1 referrers API
+  instead of the legacy `sha256-….sig` tag. The referrers on this image
+  are the keyless (Fulcio-cert) SLSA-provenance and CycloneDX-SBOM
+  attestation bundles written by `actions/attest*`; v3 enumerates one of
+  them and, with `--key` supplied, rejects the certificate-bearing bundle
+  ("expected key signature, not certificate"). The actual key signature
+  in the `.sig` tag is never consulted. `cosign tree` confirms the three
+  artifacts (one `.sig`, two referrers); the earlier referrer hypothesis
+  was correct.
+
+  **Fix (docs-only).** Document `--new-bundle-format=false`, which points
+  cosign back at the legacy `.sig` signature. Verified against the live
+  published `:latest`: `cosign verify --key cosign.pub
+  --new-bundle-format=false …` returns VERIFIED on **both** v3.0.6 and
+  v2.6.1 (the flag has existed since cosign v2.4.x and is a harmless no-op
+  on v2), so a single documented command works on both — no version split
+  for the customer. No re-sign, rebuild, or CI change required. Installed-
+  host enforcement (`policy.json` + `use-sigstore-attachments`) uses the
+  containers/image library, not the cosign CLI default, and was never
+  affected. README and ONBOARDING.md updated to add the flag and explain
+  why. The keyless-signing migration that would let the flagless default
+  v3 command work is already roadmapped in KEY-POLICY.md (out of scope
+  here).
 
 ---
 
@@ -534,3 +551,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-28 — post-pivot code review surfaced six new items (#24–#29). #24 closes the `gpgcheck=0` gap on the vendored nvidia repo and amends #19's overbroad signature-verification claim. #25 unwinds PR #13's redundant duplication of upstream akmods-provided `nvidia-container-toolkit` + CDI generator service. #26 fixes a path-filter gap that makes drift-refresh PRs skip variant CI. #27–#29 polish the new drift-watch workflow, normalise file-copy permissions, and tighten CI path filters so docs-only PRs don't trigger full image builds. Trivial stale-doc fixes (recipe prerequisites table, README variant-tag descriptions, drift-watch cron comment) landed inline with this update.
 - 2026-06-11 — items 22 + 23 closed (PR #47): publish loop now signs the manifest digest once instead of per-tag (no tag re-resolution at sign time), and the dead `inputs.brand_name`/`inputs.stream_name` references were dropped from the `build.yml` concurrency group.
 - 2026-06-11 — repo-review remainders landed: README/`private-egress.md` now state the Tailscale dependency explicitly (one deliberate vendor commitment; Headscale documented as the self-hosted escape hatch; Mullvad-exit-node recipe flagged as Tailscale-SaaS-only). `anaconda-iso` leg removed from `build-disk.yml` and `iso-kde.toml` deleted — the ISO/local installer was dropped from the roadmap; qcow2 (cloud image) is the deliverable. Item 34 opened for the cosign v3 `verify --key` failure; README documents the v2 requirement until it's root-caused.
+- 2026-06-23 — item 34 done: root-caused the cosign v3 `verify --key` failure to v3's `--new-bundle-format=true` default — it discovers the keyless provenance/SBOM OCI referrers (Fulcio-cert bundles) instead of the legacy `.sig` key signature, and rejects them against `--key`. Fixed docs-only by documenting `--new-bundle-format=false`; verified VERIFIED on cosign v3.0.6 *and* v2.6.1 against the live published `:latest`, so one command works on both. README + ONBOARDING.md updated to add the flag and explain why. No signing/CI change; installed-host policy enforcement was never affected.
