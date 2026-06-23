@@ -249,6 +249,34 @@ new ones when threat-model assumptions change.
   separate variant-CI path filter to maintain. `vendor-drift-watch.yml` no
   longer watches `mullvad.repo`.
 
+- [ ] **35. Boot/smoke-test the image in CI before publish.**
+  CI today builds and *statically* validates every image — `bootc container
+  lint`, the `verify-payload-rpm-owned.sh` guard, and the #30 kernel↔akmods
+  coupling check — but never **boots** it. Nothing confirms the published
+  image actually comes up: that it reaches a login, that the NVIDIA stack
+  initializes (kernel module loads, `nvidia-smi` works, the CDI spec
+  generates), and that the enabled services start (`tailscaled`,
+  `cockpit.socket`, the update + nudge timers). A bad layered package, a
+  broken modprobe/firewalld config, or an akmods/kernel mismatch that slips
+  past #30 would ship to a customer and surface only on their machine — at
+  worst breaking a `bootc upgrade` (mitigated by `bootc rollback`, but a poor
+  first impression for a paying customer).
+
+  Primarily a release-quality / reliability gate rather than a hardening item,
+  but with a security adjacency: an unattended security update that fails to
+  boot is an availability failure, and it backstops the #20 CVE gate ("CVE-
+  clean" and "boots" are different guarantees — neither implies the other).
+
+  Sketch: `build-disk.yml` already produces a qcow2; boot it in a VM on the
+  publish path (QEMU/KVM or a libvirt smoke harness), assert a successful boot
+  plus a handful of health checks, and block publish on failure. Scope is
+  non-trivial — **GPU presence on CI runners is the hard part**: a no-GPU
+  runner can validate OS boot + service startup but cannot exercise
+  `nvidia-smi`; real GPU validation needs a GPU runner or a staged hardware
+  check. Decide the depth (OS-boot-only vs GPU-inclusive) when picking this up.
+  Closing condition: a pre-publish boot smoke test that blocks the release on
+  failure, at an agreed depth.
+
 ## Low priority — worth doing eventually
 
 - [x] **13. SECURITY.md documenting the threat model.** _(2026-05-22)_
@@ -552,3 +580,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-06-11 — items 22 + 23 closed (PR #47): publish loop now signs the manifest digest once instead of per-tag (no tag re-resolution at sign time), and the dead `inputs.brand_name`/`inputs.stream_name` references were dropped from the `build.yml` concurrency group.
 - 2026-06-11 — repo-review remainders landed: README/`private-egress.md` now state the Tailscale dependency explicitly (one deliberate vendor commitment; Headscale documented as the self-hosted escape hatch; Mullvad-exit-node recipe flagged as Tailscale-SaaS-only). `anaconda-iso` leg removed from `build-disk.yml` and `iso-kde.toml` deleted — the ISO/local installer was dropped from the roadmap; qcow2 (cloud image) is the deliverable. Item 34 opened for the cosign v3 `verify --key` failure; README documents the v2 requirement until it's root-caused.
 - 2026-06-23 — item 34 done: root-caused the cosign v3 `verify --key` failure to v3's `--new-bundle-format=true` default — it discovers the keyless provenance/SBOM OCI referrers (Fulcio-cert bundles) instead of the legacy `.sig` key signature, and rejects them against `--key`. Fixed docs-only by documenting `--new-bundle-format=false`; verified VERIFIED on cosign v3.0.6 *and* v2.6.1 against the live published `:latest`, so one command works on both. README + ONBOARDING.md updated to add the flag and explain why. No signing/CI change; installed-host policy enforcement was never affected.
+- 2026-06-23 — item 35 opened: CI builds + statically validates images (bootc lint, payload guard, #30 kernel↔akmods check) but never boots them — no pre-publish smoke test confirms the image comes up, the NVIDIA stack initializes, and key services start. Surfaced during the #20 discussion as the gap "test before release" doesn't yet cover; "CVE-clean" and "boots" are independent guarantees. Non-trivial (GPU-on-runner is the hard part); depth (OS-boot vs GPU-inclusive) TBD.
