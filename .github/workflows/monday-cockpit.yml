@@ -1,0 +1,130 @@
+name: Monday cockpit
+
+# One weekly digest of everything that needs the maintainer, posted as a comment
+# on the pinned "Monday cockpit" issue. The signals it aggregates are otherwise
+# scattered across the Renovate dashboard, the open-PR list, the kernel-coupling
+# check and vendor-drift issues; this collapses them into a single place, in the
+# order of UPDATING.md "Your Monday routine". Doing nothing is always safe — the
+# cockpit only reports state, it never changes anything.
+
+on:
+  schedule:
+    # Monday 13:30 UTC — after Renovate (<=09:00), the weekly build (10:05) and
+    # vendor-drift-watch (13:00), so the digest reflects all of them. ~09:30 EDT.
+    - cron: '30 13 * * MON'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: read
+
+jobs:
+  cockpit:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Post Monday cockpit comment
+        run: |
+          set -euo pipefail
+          today=$(date -u +%Y-%m-%d)
+
+          # --- open PRs, normalised into buckets ---------------------------------
+          # A PR is "red" if any rollup check failed (this is how the kernel-
+          # coupling failure surfaces even though Renovate enabled auto-merge on
+          # it); "needs you" if it is open, not draft, not red and does NOT have
+          # auto-merge enabled (Action SHAs, GRYPE/SYFT, security CVEs).
+          prs=$(gh pr list --state open --limit 50 \
+            --json number,title,url,isDraft,autoMergeRequest,statusCheckRollup \
+            2>/dev/null || echo '[]')
+          norm=$(printf '%s' "$prs" | jq -c '
+            def res: (.conclusion // .state // .status // "") | ascii_upcase;
+            [ .[] | {
+                number, title, url, isDraft,
+                autoMerge: (.autoMergeRequest != null),
+                red:     ([ (.statusCheckRollup // [])[] | res ] | any(IN("FAILURE","ERROR","CANCELLED","TIMED_OUT","ACTION_REQUIRED","STARTUP_FAILURE"))),
+                pending: ([ (.statusCheckRollup // [])[] | res ] | any(IN("IN_PROGRESS","PENDING","QUEUED","WAITING","REQUESTED","EXPECTED","")))
+              } ]')
+
+          needs=$(printf '%s' "$norm" | jq -r '
+            .[] | select(.isDraft|not) | select(.autoMerge|not) | select(.red|not)
+            | "- #\(.number) \(.title)\(if .pending then "  _(checks still running — merge once green)_" else "" end)"')
+          red=$(printf '%s' "$norm" | jq -r '
+            .[] | select(.isDraft|not) | select(.red)
+            | "- #\(.number) \(.title)"')
+          auto_n=$(printf '%s' "$norm" | jq -r '
+            [ .[] | select(.isDraft|not) | select(.autoMerge) | select(.red|not) ] | length')
+
+          # --- vendored repo drift issues still open -----------------------------
+          drift=$(gh issue list --state open --search 'in:title "drifted from upstream"' \
+            --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || true)
+
+          # --- this week's scheduled publish run ---------------------------------
+          run=$(gh run list --workflow build.yml --event schedule --limit 1 \
+            --json status,conclusion,url --jq '.[0]' 2>/dev/null || echo '')
+          if [ -z "$run" ] || [ "$run" = "null" ]; then
+            publish="No scheduled build run found yet — it fires Mondays at 10:05 UTC."
+          else
+            st=$(printf '%s' "$run" | jq -r '.status // ""')
+            cc=$(printf '%s' "$run" | jq -r '.conclusion // ""')
+            url=$(printf '%s' "$run" | jq -r '.url // ""')
+            case "$st" in
+              completed)
+                case "$cc" in
+                  success) publish="✅ Already published — [run](${url}). Nothing to do." ;;
+                  *)       publish="❌ The build [failed](${url}) — open it before approving." ;;
+                esac ;;
+              waiting)     publish="⏳ **Waiting for your approval** → [open the run](${url}) → Review deployments → Approve." ;;
+              in_progress|queued) publish="🔄 Building now — it will pause for your approval shortly: [run](${url})." ;;
+              *)           publish="[Latest scheduled run](${url}) — status: ${st}." ;;
+            esac
+          fi
+
+          [ -n "$needs" ] || needs="- _none — nothing waiting on you_"
+          [ -n "$red" ]   || red="- _none_"
+          [ -n "$drift" ] || drift="- _none open_"
+
+          # --- assemble the comment ----------------------------------------------
+          # Static lines are single-quoted so backticks/$ stay literal; dynamic
+          # values are passed as printf args (never embedded in the format).
+          {
+            printf '## 🗓️ Monday cockpit — %s\n\n' "$today"
+            echo 'Top to bottom. Doing nothing is safe — last week'\''s signed image stays live.'
+            echo
+            echo '**1 · Approve this week'\''s publish**'
+            echo
+            printf '%s\n\n' "$publish"
+            echo '_Ships what auto-merged over the weekend. PRs you merge today ride next Monday — or use **Run workflow** to publish now._'
+            echo
+            echo '**2 · PRs that need your merge** (hand-merge the green ones)'
+            echo
+            printf '%s\n\n' "$needs"
+            printf '**3 · ⚠️ Red / blocked PRs** — a red `kinoite-main` PR is the coupling dance ([UPDATING.md §1](/%s/blob/main/UPDATING.md#1-the-coupling-dance--rolling-the-base-kernel-forward))\n\n' "$GH_REPO"
+            printf '%s\n\n' "$red"
+            echo '**4 · Vendored repo drift**'
+            echo
+            printf '%s\n\n' "$drift"
+            echo '---'
+            printf '<sub>FYI: %s Renovate PR(s) have auto-merge on — they land on their own once green. Full routine: [UPDATING.md](/%s/blob/main/UPDATING.md). Posted every Monday ~13:30 UTC by `monday-cockpit.yml`.</sub>\n' "$auto_n" "$GH_REPO"
+          } > /tmp/cockpit.md
+
+          # --- find-or-create the cockpit issue, then comment --------------------
+          title="🗓️ Monday cockpit"
+          num=$(gh issue list --state open --search 'in:title "Monday cockpit"' \
+            --json number --jq '.[0].number // ""' 2>/dev/null || echo "")
+          if [ -z "$num" ]; then
+            # gh issue create prints the new issue URL; take the trailing number
+            # (avoids the search-index lag of a re-lookup right after creation).
+            issue_url=$(gh issue create --title "$title" \
+              --body "Your single weekly checklist. A new comment lands here every Monday ~13:30 UTC with what needs you that week — see [UPDATING.md](/${GH_REPO}/blob/main/UPDATING.md). **Pin this issue** so it is easy to find.")
+            num=$(printf '%s' "$issue_url" | grep -oE '[0-9]+$' || true)
+          fi
+          if [ -z "$num" ]; then
+            echo "::error::Could not determine the Monday cockpit issue number."
+            exit 1
+          fi
+          gh issue comment "$num" --body-file /tmp/cockpit.md
+          echo "Posted cockpit to issue #${num}"

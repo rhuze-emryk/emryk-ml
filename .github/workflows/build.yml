@@ -36,6 +36,7 @@ on:
       - '.github/renovate.json5'
       - '.github/workflows/renovate-notify.yml'
       - '.github/workflows/vendor-drift-watch.yml'
+      - '.github/workflows/monday-cockpit.yml'
       - '.github/workflows/build-disk.yml'
       - 'LICENSE'
       - 'Justfile'
@@ -112,7 +113,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-          NONIMAGE_RE: '(\.md$|^docs/|^\.docs/|^\.claude/|^disk_config/|^renovate\.json$|^\.github/renovate\.json5$|^\.github/workflows/(renovate-notify|vendor-drift-watch|build-disk)\.yml$|^LICENSE$|^Justfile$|^artifacthub-repo\.yml$|^\.gitignore$)'
+          NONIMAGE_RE: '(\.md$|^docs/|^\.docs/|^\.claude/|^disk_config/|^renovate\.json$|^\.github/renovate\.json5$|^\.github/workflows/(renovate-notify|vendor-drift-watch|monday-cockpit|build-disk)\.yml$|^LICENSE$|^Justfile$|^artifacthub-repo\.yml$|^\.gitignore$)'
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" != 'pull_request' ]; then
