@@ -2,7 +2,7 @@
 
 [![Build Status](https://github.com/rhuze-emryk/emryk-ml/actions/workflows/build.yml/badge.svg)](https://github.com/rhuze-emryk/emryk-ml/actions/workflows/build.yml)
 
-A managed [bootc](https://github.com/bootc-dev/bootc) image for cloud ML workstations. Built on [Universal Blue's](https://universal-blue.org/) `kinoite-main` (Fedora Kinoite + UBlue fixes) with NVIDIA open kernel modules, KDE Plasma, and a container-first dev toolchain pre-configured.
+A managed [bootc](https://github.com/bootc-dev/bootc) image for cloud ML workstations. Built on [Universal Blue's](https://universal-blue.org/) `kinoite-main` (Fedora Kinoite + UBlue fixes), it wires NVIDIA open kernel modules all the way through to **rootless containers**: your GPU is available inside Podman and distrobox out of the box — no `--privileged`, no root daemon, no manual CDI setup. KDE Plasma and a container-first dev toolchain round it out.
 
 This is the public image foundation for the [Emryk Workstation](https://emryk.com) product. It publishes to `ghcr.io/rhuze-emryk/emryk-ml` weekly (the Monday build), or on demand via **Run workflow**; every push to `main` is built and tested but does not move the registry.
 
@@ -10,12 +10,13 @@ This is the public image foundation for the [Emryk Workstation](https://emryk.co
 
 **Base:** `ghcr.io/ublue-os/kinoite-main:latest` — stock Fedora Kinoite with UBlue's RPMFusion, hardware quirk fixes, and `bootc` integration.
 
-**NVIDIA:** Open kernel modules via `ghcr.io/ublue-os/akmods-nvidia-open:latest`, installed in a multi-stage build so the pre-built modules match the base image's kernel exactly.
+**NVIDIA:** Open kernel modules via `ghcr.io/ublue-os/akmods-nvidia-open:latest`, installed in a multi-stage build so the pre-built modules match the base image's kernel exactly. The **NVIDIA Container Toolkit** is layered on top, and `nvidia-cdi-generate.service` regenerates the CDI spec (`/etc/cdi/nvidia.yaml`) at every boot so the GPU stays exposed to rootless containers across base-image rebases — see [GPU in containers](#gpu-in-containers) below.
 
 **Packages installed on top of the base:**
 
 | Package | Purpose |
 |---|---|
+| `nvidia-container-toolkit` | Pass the host GPU into rootless Podman/distrobox containers via CDI |
 | `tailscale` | Team VPN |
 | `wireguard-tools` | WireGuard primitives |
 | `cockpit` | Remote browser-based management |
@@ -27,9 +28,9 @@ This is the public image foundation for the [Emryk Workstation](https://emryk.co
 | `gh` | GitHub CLI |
 | `git` / `curl` / `wget` | Standard tooling |
 
-**Systemd services enabled:** `tailscaled`, `cockpit.socket`, `bootc-fetch-apply-updates.timer`. The **rootless** per-user `podman.socket` is enabled globally (every user gets `/run/user/$UID/podman/podman.sock` automatically); the rootful system `podman.socket` is deliberately disabled — see "Containers" below.
+**Systemd services enabled:** `tailscaled`, `cockpit.socket`, `bootc-fetch-apply-updates.timer`, `nvidia-cdi-generate.service` (regenerates the GPU CDI spec each boot), `flatpak-system-update.timer` (daily Flatpak updates), `emryk-update-nudge.timer` (staged-update login banner), and `emryk-install-flatpaks.service` (first-boot Firefox install). The **rootless** per-user `podman.socket` is enabled globally (every user gets `/run/user/$UID/podman/podman.sock` automatically); the rootful system `podman.socket` is deliberately disabled — see "Containers" below.
 
-**Flatpaks:** Firefox is installed from Flathub at first boot via a oneshot systemd service (`emryk-install-flatpaks.service`). Network is required on first boot for this step.
+**Flatpaks:** Firefox is installed from Flathub at first boot via a oneshot systemd service (`emryk-install-flatpaks.service`). Network is required on first boot for this step. `flatpak-system-update.timer` then keeps system Flatpaks current daily.
 
 **NVIDIA modprobe config:** nouveau blacklisted; `nvidia-drm modeset=1` set; open module enabled for unsupported GPUs.
 
@@ -109,6 +110,25 @@ watch or subscribe to that issue to stay aware of dependency changes.
 ## Containers
 
 Container workloads run **rootless** by default. The rootless `podman.socket` is enabled globally, so every user automatically gets a Docker-compatible API socket at `/run/user/$UID/podman/podman.sock` — scoped to that user's own privileges, with no path to root. `podman`, `podman-compose`, `distrobox`, and the `docker` CLI (via `podman-docker`) all work out of the box.
+
+### GPU in containers
+
+The NVIDIA Container Toolkit is installed, and `nvidia-cdi-generate.service` writes a fresh [CDI](https://github.com/cncf-tags/container-device-interface) spec to `/etc/cdi/nvidia.yaml` on every boot — so the device names stay in sync with the running driver even after a base-image rebase swaps the kernel and modules. No per-boot `nvidia-ctk` invocation, no `--privileged`, no rootful daemon.
+
+Run a GPU workload rootless with Podman:
+
+```bash
+podman run --rm --device nvidia.com/gpu=all docker.io/nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+```
+
+Or spin up a GPU-enabled dev container with distrobox:
+
+```bash
+distrobox create --name ml --image docker.io/nvidia/cuda:12.4.0-base-ubuntu22.04 --nvidia
+distrobox enter ml
+```
+
+`--device nvidia.com/gpu=0` (or any index) passes a single GPU instead of all of them. The CDI spec is regenerated at boot, so if you add or change GPUs you just reboot rather than re-running any setup.
 
 For applications that connect to the Docker socket via the Docker SDK, point them at the rootless socket:
 
@@ -220,9 +240,11 @@ just build-qcow2
 Containerfile                       Multi-stage build: akmods-nvidia-open → kinoite-main
 build_files/build.sh                Package installs, repo setup, service config
 .github/workflows/
-  build.yml                         Build, push to GHCR, sign with cosign; akmods↔kernel coupling check; weekly cron
+  build.yml                         Build + test on every push; publish (push to GHCR, sign, attest) only on the weekly Monday cron or manual dispatch; akmods↔kernel coupling check
   build-disk.yml                    Disk image builds (qcow2 — the cloud-image deliverable)
   vendor-drift-watch.yml            Weekly diff of vendored .repo files vs upstream; opens an issue on drift
+  renovate-notify.yml               Comments on the Renovate activity log (#36) when a dependency change lands on main
+  monday-cockpit.yml                Weekly Monday digest of everything that needs the maintainer, posted to a pinned issue
 cosign.pub                          Public signing key
 renovate.json                       Renovate (sole dep bot): pins action SHAs + base digests, auto-merges green digest bumps
 UPDATING.md                         Maintainer runbook: rolling the base, the akmods kernel dance, out-of-band builds
