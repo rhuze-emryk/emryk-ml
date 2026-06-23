@@ -1,0 +1,21 @@
+# Grype configuration for the emryk-ml CVE gate.
+#
+# Policy (see SECURITY.md): critical-severity findings BLOCK the build —
+# .github/workflows/build.yml runs grype with `--fail-on critical`, and the
+# push/sign/attest steps come after it, so a critical also blocks the publish.
+# High, medium, and low findings are reported in the job summary but do not
+# block.
+#
+# Waivers below suppress a specific finding from the gate. Add one ONLY with a
+# reason and a date, and PREFER a short-dated waiver (a fix is already available
+# upstream and we're waiting for the next base-digest bump to pick it up) over
+# an open-ended acceptance. Re-review waivers whenever the base digest bumps —
+# that's when upstream fixes actually land. Every waiver is reviewed in PR like
+# any other change.
+
+ignore:
+  # xdg-desktop-portal critical — FIXED upstream in 1.22.1-1.fc44; the
+  # digest-pinned base just hasn't picked it up yet. Short-dated: remove once a
+  # base bump clears it. Opened 2026-06-23.
+  - vulnerability: FEDORA-2026-d8f8abf763
+    reason: "Fixed upstream in xdg-desktop-portal 1.22.1-1.fc44; awaiting base-digest bump. Re-check at next base bump (opened 2026-06-23)."

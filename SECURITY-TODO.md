@@ -39,6 +39,14 @@ new ones when threat-model assumptions change.
   grype scan can't silently miss a vendor binary dropped outside dnf.
   Flip to `--fail-on critical` once a triage process is in place.
 
+  **Correction (2026-06-23, via #20):** from the 2026-05-23 pivot to
+  `syft scan dir:./sbom-input` until #20, the scan was **vacuous** — the
+  input had the RPM database but no `os-release`, so syft recorded no
+  distro and grype matched **zero** Fedora packages. "Report-only, no
+  findings" was an artifact of broken matching, not a clean image. #20
+  fixed the SBOM (stages `os-release`, adds a no-distro build guard) and
+  then enabled `--fail-on critical`.
+
 - [x] **4. Cockpit reachable over Tailscale only.** _(2026-05-22; correctly closed by item #9)_
   Initial commit shipped `/etc/firewalld/zones/tailscale.xml`
   (`target=ACCEPT`, interface `tailscale0`) — the tailnet half is correct.
@@ -210,16 +218,39 @@ new ones when threat-model assumptions change.
   workstation that drives this repo) — does not block closing this
   item, since the policy itself is now defined.
 
-- [ ] **20. Flip Grype to `--fail-on critical`.**
+- [x] **20. Flip Grype to `--fail-on critical`.** _(2026-06-23)_
   #3 left this as a follow-up "once a triage process is in place." The
-  Grype step in both `build.yml` and `build-private-ml.yml` runs with
-  `continue-on-error: true` and no `--fail-on`, so a critical CVE in
-  the SBOM shows up in the job summary but does not block merge or
-  publish. Define triage first (proposed default: criticals block;
-  highs open a tracking issue; mediums report-only), document it in
-  SECURITY.md, then flip the flag.
-  Closing condition: triage process documented in SECURITY.md and the
-  workflow blocks on critical CVEs.
+  Grype step ran with `continue-on-error: true` and no `--fail-on`, so a
+  critical CVE in the SBOM showed up in the job summary but never blocked.
+
+  **Prerequisite bug found and fixed first.** Pre-flight (reproducing CI's
+  scan against the published SBOM with grype v0.114.0) showed the scan was
+  **vacuous: 0 matches**. The SBOM is built from `syft scan dir:./sbom-input`,
+  which contained only the extracted RPM database and **no `os-release`** — so
+  syft recorded no distro, and grype couldn't map `pkg:rpm/…fc44` packages to
+  the `fedora:44` namespace, matching nothing regardless of content. (This also
+  meant a customer gryping the published SBOM got a false "clean.") Forcing
+  `--distro fedora:44` surfaced **1 Critical, 3 High, 1 Medium** — all already
+  fixed upstream. See the correction note in #3.
+  - Fix (Option B): stage `os-release` into `sbom-input` (`/usr/lib` + `/etc`)
+    so syft records the distro in the SBOM. Fixes the gate **and** the
+    customer-facing SBOM. Two guards added so it can't silently regress: the
+    extract step asserts `ID=fedora` in the staged os-release, and the
+    SBOM-gen step fails the build if the SBOM has no `syft:distro:` metadata.
+
+  **Then the gate.** Decision (criticals block / highs report / mediums report)
+  and PR-gate placement chosen with the maintainer. `build.yml`'s grype step
+  now runs `--fail-on critical` with `continue-on-error` removed; because the
+  push/sign/attest steps come after it, a critical blocks the publish too.
+  Waivers live in a committed `.grype.yaml` (reason + date, reviewed in PR);
+  seeded with a short-dated waiver for the xdg-desktop-portal critical
+  (FEDORA-2026-d8f8abf763, fixed in 1.22.1-1.fc44) to clear at the next base
+  bump. Policy documented in SECURITY.md ("Vulnerability gating"). Verified
+  locally that the gate blocks unwaived (grype exit 2) and passes waived
+  (exit 0); the PR build is the first live dogfood. The `.grype.yaml` waiver
+  discipline is now load-bearing for the PR-gate ↔ Renovate auto-merge
+  interaction (an unwaived critical blocks base-bump auto-merge — that's the
+  point, but it means accepted findings must be waived promptly).
 
 - [ ] **25. Remove redundant `nvidia-container-toolkit` install + CDI service from base `build.sh`.**
   PR #13 added `nvidia-container-toolkit` to `build_files/build.sh`'s
@@ -534,3 +565,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-28 — post-pivot code review surfaced six new items (#24–#29). #24 closes the `gpgcheck=0` gap on the vendored nvidia repo and amends #19's overbroad signature-verification claim. #25 unwinds PR #13's redundant duplication of upstream akmods-provided `nvidia-container-toolkit` + CDI generator service. #26 fixes a path-filter gap that makes drift-refresh PRs skip variant CI. #27–#29 polish the new drift-watch workflow, normalise file-copy permissions, and tighten CI path filters so docs-only PRs don't trigger full image builds. Trivial stale-doc fixes (recipe prerequisites table, README variant-tag descriptions, drift-watch cron comment) landed inline with this update.
 - 2026-06-11 — items 22 + 23 closed (PR #47): publish loop now signs the manifest digest once instead of per-tag (no tag re-resolution at sign time), and the dead `inputs.brand_name`/`inputs.stream_name` references were dropped from the `build.yml` concurrency group.
 - 2026-06-11 — repo-review remainders landed: README/`private-egress.md` now state the Tailscale dependency explicitly (one deliberate vendor commitment; Headscale documented as the self-hosted escape hatch; Mullvad-exit-node recipe flagged as Tailscale-SaaS-only). `anaconda-iso` leg removed from `build-disk.yml` and `iso-kde.toml` deleted — the ISO/local installer was dropped from the roadmap; qcow2 (cloud image) is the deliverable. Item 34 opened for the cosign v3 `verify --key` failure; README documents the v2 requirement until it's root-caused.
+- 2026-06-23 — item 20 done, but pre-flight first exposed a bigger bug: the SBOM-based grype scan had been **vacuous since 2026-05-23** (no `os-release` in `syft scan dir:` input → no distro → zero matches; customers gryping the published SBOM got false-clean too). Fixed by staging `os-release` into `sbom-input` (Option B — fixes the gate and the published SBOM) plus two anti-regression guards. Then enabled the gate: `build.yml` grype runs `--fail-on critical` (PR-gate; blocks publish too since push/sign/attest follow it), waivers in a committed `.grype.yaml` (seeded with a short-dated xdg-desktop-portal waiver, fixed upstream, clears at next base bump). Policy in SECURITY.md ("Vulnerability gating"); #3 annotated with the vacuous-scan correction. Real findings at this digest: 1 Critical (waived) + 3 High + 1 Medium, all fixed upstream.
