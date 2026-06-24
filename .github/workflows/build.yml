@@ -250,8 +250,14 @@ jobs:
           buildah unshare bash -ec '
             ctr=$(buildah from "localhost/${IMAGE_NAME}:${DEFAULT_TAG}")
             root=$(buildah mount "$ctr")
-            mkdir -p ./sbom-input/usr/lib/sysimage/rpm
+            mkdir -p ./sbom-input/usr/lib/sysimage/rpm ./sbom-input/etc
             cp -RL "$root/usr/lib/sysimage/rpm/." ./sbom-input/usr/lib/sysimage/rpm/
+            # SECURITY-TODO #20: also stage os-release so syft records the distro.
+            # Without it the SBOM has no distro and grype matches ZERO Fedora
+            # packages — the CVE scan (and any customer who grypes the published
+            # SBOM) silently reports clean. cp -L dereferences the /etc symlink.
+            cp -L "$root/usr/lib/os-release" ./sbom-input/usr/lib/os-release
+            cp -L "$root/usr/lib/os-release" ./sbom-input/etc/os-release
             buildah umount "$ctr"
             buildah rm "$ctr"
           '
@@ -261,6 +267,12 @@ jobs:
           size_kb=$(du -sk ./sbom-input | cut -f1)
           if [ "$size_kb" -lt 10000 ]; then
             echo "::error::sbom-input is only ${size_kb}KB — RPM DB extract failed."
+            exit 1
+          fi
+          # SECURITY-TODO #20: os-release must be staged and Fedora, or the scan
+          # goes vacuous (grype can't map RPMs to the fedora namespace).
+          if ! grep -q '^ID=fedora' ./sbom-input/usr/lib/os-release; then
+            echo "::error::sbom-input os-release missing or not Fedora — grype would match nothing (SECURITY-TODO #20)."
             exit 1
           fi
 
@@ -277,6 +289,13 @@ jobs:
         if: steps.changes.outputs.build == 'true'
         run: |
           syft scan dir:./sbom-input -o cyclonedx-json=sbom.cdx.json
+          # SECURITY-TODO #20: guard against the vacuous-scan regression — the
+          # SBOM must carry distro metadata or grype silently matches zero
+          # Fedora packages and the CVE gate becomes a no-op that always passes.
+          if ! grep -q 'syft:distro:' sbom.cdx.json; then
+            echo "::error::SBOM has no distro metadata — grype would match nothing (SECURITY-TODO #20). Check os-release staging in the extract step."
+            exit 1
+          fi
           {
             echo "## SBOM"
             echo ""
@@ -291,14 +310,21 @@ jobs:
             | sudo tar -xz -C /usr/local/bin grype
           grype version
 
-      # SECURITY-TODO #3: CVE scan via the SBOM (no image re-catalog).
-      # Report-only — does not fail the build. Flip to `--fail-on critical`
-      # once a triage process is in place.
-      - name: Scan SBOM with Grype (report-only)
+      # SECURITY-TODO #3 + #20: CVE scan via the SBOM (no image re-catalog).
+      # Policy (SECURITY.md): critical-severity findings BLOCK the build (and so
+      # the publish, since the push/sign/attest steps come after this one);
+      # high/medium/low are reported in the job summary. Accepted findings — e.g.
+      # a fix already available upstream that the digest-pinned base hasn't
+      # picked up yet — are waived in `.grype.yaml` (auto-loaded from the repo
+      # root) with a reason + date, reviewed in PR like any other change.
+      - name: Scan SBOM with Grype (criticals block)
         if: steps.changes.outputs.build == 'true'
-        continue-on-error: true
         run: |
-          grype "sbom:./sbom.cdx.json" --output table > grype-report.txt
+          # --fail-on critical sets a non-zero exit when a >= critical finding
+          # is present and not waived. tee + captured rc so the full table still
+          # lands in the job summary even when the gate fails the build.
+          rc=0
+          grype "sbom:./sbom.cdx.json" --output table --fail-on critical | tee grype-report.txt || rc=$?
           {
             echo "## Grype vulnerability scan — \`${IMAGE_NAME}:${DEFAULT_TAG}\`"
             echo ""
@@ -306,6 +332,10 @@ jobs:
             cat grype-report.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Grype found an unwaived critical-severity vulnerability — build blocked (SECURITY-TODO #20). Fix it (bump the base) or add a justified, dated waiver to .grype.yaml."
+          fi
+          exit "$rc"
 
       # Rechunk is a script that we use on Universal Blue to make sure there isnt a single huge layer when your image gets published.
       # This does not make your image faster to download, just provides better resumability and fixes a few errors.
