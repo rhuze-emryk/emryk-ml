@@ -94,24 +94,40 @@ new ones when threat-model assumptions change.
   this entry): the closing-window framing said "the gpgcheck=1 still
   verifies the actual package signature at install time." That is true
   for `mullvad.repo` and `tailscale.repo` (both `gpgcheck=1`) but
-  **false** for `nvidia-container-toolkit.repo`, which mirrors upstream's
+  **false** for `nvidia-container-toolkit.repo`, which mirrored upstream's
   `gpgcheck=0` — only repodata metadata is signature-checked, not the
   RPMs themselves. Closing the gap is tracked separately in #24.
+  **Update (2026-06-23): #24 closed this** — the vendored
+  `nvidia-container-toolkit.repo` now sets `gpgcheck=1`, so all vendored
+  repos verify package signatures at install time.
 
-- [ ] **24. Close the `gpgcheck=0` gap on vendored `nvidia-container-toolkit.repo`.**
-  `build_files/nvidia-container-toolkit.repo` mirrors upstream's
-  `gpgcheck=0` (only `repo_gpgcheck=1`). RPMs from this repo are
+- [x] **24. Close the `gpgcheck=0` gap on vendored `nvidia-container-toolkit.repo`.** _(2026-06-23)_
+  `build_files/nvidia-container-toolkit.repo` mirrored upstream's
+  `gpgcheck=0` (only `repo_gpgcheck=1`). RPMs from this repo were
   installed without package-signature verification, so an attacker who
   serves a malicious nvidia-container-toolkit RPM via a compromised
   mirror or TLS-MITM (with a CA the build trusts) lands the package
-  unchallenged. Decision needed: either (a) flip the vendored copy to
-  `gpgcheck=1` — vendoring is exactly the mechanism that buys us the
-  freedom to deviate from upstream; this would surface any genuinely
-  unsigned package as a build-time failure — or (b) accept upstream's
-  posture and amend SECURITY.md to be explicit that this repo has a
-  metadata-only trust boundary.
-  Closing condition: a decision documented in SECURITY.md and reflected
-  in the vendored file.
+  unchallenged.
+
+  Decision: **option (a) — flip the vendored copy to `gpgcheck=1`** (both
+  the `stable` and `experimental` stanzas). Vendoring is exactly the
+  mechanism that buys us the freedom to be stricter than upstream's
+  compatibility-first default; a genuinely unsigned or wrong-key package
+  now fails the build instead of landing silently. The repo already
+  carries the upstream `gpgkey=` (used today by `repo_gpgcheck=1`), so no
+  new build-time network dependency is introduced. Documented in
+  SECURITY.md ("Build-time package integrity").
+
+  Side-effect handled in the same change: `vendor-drift-watch.yml` did a
+  raw `diff` against upstream, so `gpgcheck=1` would have tripped a weekly
+  false-positive drift issue — and its suggested `curl … -o` refresh would
+  have silently reverted the hardening. The drift matrix now carries a
+  `normalize` sed (`s/^gpgcheck=0$/gpgcheck=1/`) applied to the upstream
+  copy before diffing, so drift-watch still fires on real upstream changes
+  (baseurl, gpgkey, added repos) but not on this deliberate deviation.
+
+  Verification is the green CI build on the PR (the first build with
+  `gpgcheck=1` against NVIDIA's actual stable RPM signatures).
 
 ## Medium priority — hardening and defense in depth
 
@@ -579,5 +595,6 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-05-28 — post-pivot code review surfaced six new items (#24–#29). #24 closes the `gpgcheck=0` gap on the vendored nvidia repo and amends #19's overbroad signature-verification claim. #25 unwinds PR #13's redundant duplication of upstream akmods-provided `nvidia-container-toolkit` + CDI generator service. #26 fixes a path-filter gap that makes drift-refresh PRs skip variant CI. #27–#29 polish the new drift-watch workflow, normalise file-copy permissions, and tighten CI path filters so docs-only PRs don't trigger full image builds. Trivial stale-doc fixes (recipe prerequisites table, README variant-tag descriptions, drift-watch cron comment) landed inline with this update.
 - 2026-06-11 — items 22 + 23 closed (PR #47): publish loop now signs the manifest digest once instead of per-tag (no tag re-resolution at sign time), and the dead `inputs.brand_name`/`inputs.stream_name` references were dropped from the `build.yml` concurrency group.
 - 2026-06-11 — repo-review remainders landed: README/`private-egress.md` now state the Tailscale dependency explicitly (one deliberate vendor commitment; Headscale documented as the self-hosted escape hatch; Mullvad-exit-node recipe flagged as Tailscale-SaaS-only). `anaconda-iso` leg removed from `build-disk.yml` and `iso-kde.toml` deleted — the ISO/local installer was dropped from the roadmap; qcow2 (cloud image) is the deliverable. Item 34 opened for the cosign v3 `verify --key` failure; README documents the v2 requirement until it's root-caused.
+- 2026-06-23 — item 24 done: vendored `nvidia-container-toolkit.repo` flipped to `gpgcheck=1` (both stanzas) so NVIDIA RPMs are package-signature-verified at install, not metadata-only; all vendored repos now `gpgcheck=1`. Documented in SECURITY.md ("Build-time package integrity") and amended #19's gpgcheck-variance note. `vendor-drift-watch.yml` given a per-entry `normalize` sed so this deliberate deviation from upstream's `gpgcheck=0` doesn't trip a weekly false-positive drift issue (or get curl-reverted). Validation is the green CI build with `gpgcheck=1` against NVIDIA's real RPM signatures.
 - 2026-06-23 — item 34 done: root-caused the cosign v3 `verify --key` failure to v3's `--new-bundle-format=true` default — it discovers the keyless provenance/SBOM OCI referrers (Fulcio-cert bundles) instead of the legacy `.sig` key signature, and rejects them against `--key`. Fixed docs-only by documenting `--new-bundle-format=false`; verified VERIFIED on cosign v3.0.6 *and* v2.6.1 against the live published `:latest`, so one command works on both. README + ONBOARDING.md updated to add the flag and explain why. No signing/CI change; installed-host policy enforcement was never affected.
 - 2026-06-23 — item 35 opened: CI builds + statically validates images (bootc lint, payload guard, #30 kernel↔akmods check) but never boots them — no pre-publish smoke test confirms the image comes up, the NVIDIA stack initializes, and key services start. Surfaced during the #20 discussion as the gap "test before release" doesn't yet cover; "CVE-clean" and "boots" are independent guarantees. Non-trivial (GPU-on-runner is the hard part); depth (OS-boot vs GPU-inclusive) TBD.

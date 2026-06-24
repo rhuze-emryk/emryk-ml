@@ -30,6 +30,13 @@ jobs:
           - name: nvidia-container-toolkit
             vendored: build_files/nvidia-container-toolkit.repo
             upstream: https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
+            # We deliberately ship gpgcheck=1 where upstream ships gpgcheck=0
+            # (SECURITY-TODO #24). Normalize that one intentional deviation onto
+            # the upstream copy before diffing so drift-watch only fires on real
+            # upstream changes (baseurl, gpgkey, added repos) — not on our own
+            # hardening choice, and so the "refresh" command it suggests can't
+            # silently revert gpgcheck back to 0.
+            normalize: 's/^gpgcheck=0$/gpgcheck=1/'
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -39,8 +46,18 @@ jobs:
 
       - name: Compare against vendored copy
         id: diff
+        env:
+          VENDORED: ${{ matrix.vendored }}
+          NORMALIZE: ${{ matrix.normalize }}
         run: |
-          if diff -u "${{ matrix.vendored }}" /tmp/upstream.repo > /tmp/drift.patch; then
+          # Apply any documented intentional deviation to the upstream copy
+          # before diffing (see the matrix `normalize` entries), so drift-watch
+          # alerts only on genuine upstream movement, not on choices we made on
+          # purpose.
+          if [ -n "${NORMALIZE}" ]; then
+            sed -i "${NORMALIZE}" /tmp/upstream.repo
+          fi
+          if diff -u "${VENDORED}" /tmp/upstream.repo > /tmp/drift.patch; then
             echo "drifted=false" >> "$GITHUB_OUTPUT"
           else
             echo "drifted=true" >> "$GITHUB_OUTPUT"
