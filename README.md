@@ -50,7 +50,7 @@ Emryk ML ships as **one image** — `:latest`. Roll forward with `bootc upgrade`
 
 ### Optional recipes
 
-The base is kept minimal and vendor-neutral — with one deliberate exception, Tailscale, which is the management plane (see "Remote management" below for why, and for the self-hosted escape hatch). Capabilities you might want are documented as opt-in recipes rather than baked in:
+The base is **NVIDIA-targeted today** — the GPU stack (open kernel modules, `nvidia-container-toolkit`, CDI generation, nouveau blacklist) is baked in. Beyond that it's kept minimal, with one further deliberate vendor commitment — Tailscale, the management plane (see "Remote management" below for why, and for the self-hosted escape hatch). Other capabilities are documented as opt-in recipes rather than baked in:
 
 - **Private egress (VPN).** Route traffic through a Mullvad exit node via the Tailscale already in the image — privacy without embedding another vendor. See [`docs/recipes/private-egress.md`](./docs/recipes/private-egress.md).
 - **Unsloth Studio (rootless).** See [`docs/recipes/unsloth-studio.md`](./docs/recipes/unsloth-studio.md).
@@ -151,15 +151,18 @@ Images are signed with [cosign](https://github.com/sigstore/cosign). The public 
 ```bash
 cosign verify \
     --key https://raw.githubusercontent.com/rhuze-emryk/emryk-ml/main/cosign.pub \
+    --new-bundle-format=false \
     ghcr.io/rhuze-emryk/emryk-ml:latest
 ```
 
-> **Use cosign v2.x for this check (for now).** The command above works with
-> cosign v2 (our pipeline signs with v2.6.1) but is currently known to fail
-> against this image's signatures under cosign v3. Root cause is being
-> investigated (SECURITY-TODO #34); until it's resolved, verify with a v2
-> release. The `gh attestation` checks below are unaffected — they don't use
-> cosign at all.
+> **The `--new-bundle-format=false` flag is needed on cosign v3.** The image is
+> signed with a long-lived key, stored as the legacy `sha256-….sig` attachment.
+> cosign v3 defaults to discovering Sigstore *bundles* via the OCI referrers
+> API, where it instead finds this image's keyless provenance/SBOM attestations
+> and rejects them against `--key` ("expected key signature, not certificate").
+> The flag points cosign at the legacy signature; it is accepted and harmless on
+> cosign v2.x too, so the one command works on both. The `gh attestation` checks
+> below are unaffected — they don't use cosign at all.
 
 **Enforced on installed systems.** Builds containing this policy ship
 `/etc/containers/policy.json` requiring sigstore-signed pulls from

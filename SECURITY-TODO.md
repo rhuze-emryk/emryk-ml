@@ -296,6 +296,34 @@ new ones when threat-model assumptions change.
   separate variant-CI path filter to maintain. `vendor-drift-watch.yml` no
   longer watches `mullvad.repo`.
 
+- [ ] **35. Boot/smoke-test the image in CI before publish.**
+  CI today builds and *statically* validates every image — `bootc container
+  lint`, the `verify-payload-rpm-owned.sh` guard, and the #30 kernel↔akmods
+  coupling check — but never **boots** it. Nothing confirms the published
+  image actually comes up: that it reaches a login, that the NVIDIA stack
+  initializes (kernel module loads, `nvidia-smi` works, the CDI spec
+  generates), and that the enabled services start (`tailscaled`,
+  `cockpit.socket`, the update + nudge timers). A bad layered package, a
+  broken modprobe/firewalld config, or an akmods/kernel mismatch that slips
+  past #30 would ship to a customer and surface only on their machine — at
+  worst breaking a `bootc upgrade` (mitigated by `bootc rollback`, but a poor
+  first impression for a paying customer).
+
+  Primarily a release-quality / reliability gate rather than a hardening item,
+  but with a security adjacency: an unattended security update that fails to
+  boot is an availability failure, and it backstops the #20 CVE gate ("CVE-
+  clean" and "boots" are different guarantees — neither implies the other).
+
+  Sketch: `build-disk.yml` already produces a qcow2; boot it in a VM on the
+  publish path (QEMU/KVM or a libvirt smoke harness), assert a successful boot
+  plus a handful of health checks, and block publish on failure. Scope is
+  non-trivial — **GPU presence on CI runners is the hard part**: a no-GPU
+  runner can validate OS boot + service startup but cannot exercise
+  `nvidia-smi`; real GPU validation needs a GPU runner or a staged hardware
+  check. Decide the depth (OS-boot-only vs GPU-inclusive) when picking this up.
+  Closing condition: a pre-publish boot smoke test that blocks the release on
+  failure, at an agreed depth.
+
 ## Low priority — worth doing eventually
 
 - [x] **13. SECURITY.md documenting the threat model.** _(2026-05-22)_
@@ -511,22 +539,39 @@ new ones when threat-model assumptions change.
     anyone pinned to them, but no new builds or security updates. README and
     SECURITY.md document the move to `:latest`.
 
-- [ ] **34. `cosign verify --key` fails under cosign v3.**
-  Observed 2026-06-05: `cosign verify --key cosign.pub …:latest` fails
+- [x] **34. `cosign verify --key` fails under cosign v3.** _(2026-06-23)_
+  Observed 2026-06-05: `cosign verify --key cosign.pub …:latest` failed
   under cosign v3.0.6 with `no matching attestations: expected key
   signature, not certificate` — by tag, by digest, and with
   `--insecure-ignore-tlog`. The same command under v2.6.1 (the version
-  the pipeline signs with) returns VERIFIED, so the signature itself is
-  good; this is a v3 verify-side behavior change. Leading hypothesis:
-  v3 enumerates the keyless (Fulcio-cert) provenance/SBOM OCI referrers
-  and trips on them when `--key` is given. A customer installing
-  current cosign and following the README hits a verification failure —
-  worse optics than no signing. README now documents the v2 requirement
-  as an interim measure. To do: confirm the referrer hypothesis against
-  a current published digest, then find the v3 invocation that scopes
-  verification to the `.sig` (or adjust signing) so the documented
-  command works on whatever `brew install cosign` / distro packages
-  ship today.
+  the pipeline signs with) returned VERIFIED, so the signature itself is
+  good; this is a v3 verify-side behavior change.
+
+  **Root cause (confirmed).** cosign v3 changed the default of
+  `--new-bundle-format` from `false` to `true`, so `cosign verify`
+  discovers signatures as Sigstore bundles via the OCI 1.1 referrers API
+  instead of the legacy `sha256-….sig` tag. The referrers on this image
+  are the keyless (Fulcio-cert) SLSA-provenance and CycloneDX-SBOM
+  attestation bundles written by `actions/attest*`; v3 enumerates one of
+  them and, with `--key` supplied, rejects the certificate-bearing bundle
+  ("expected key signature, not certificate"). The actual key signature
+  in the `.sig` tag is never consulted. `cosign tree` confirms the three
+  artifacts (one `.sig`, two referrers); the earlier referrer hypothesis
+  was correct.
+
+  **Fix (docs-only).** Document `--new-bundle-format=false`, which points
+  cosign back at the legacy `.sig` signature. Verified against the live
+  published `:latest`: `cosign verify --key cosign.pub
+  --new-bundle-format=false …` returns VERIFIED on **both** v3.0.6 and
+  v2.6.1 (the flag has existed since cosign v2.4.x and is a harmless no-op
+  on v2), so a single documented command works on both — no version split
+  for the customer. No re-sign, rebuild, or CI change required. Installed-
+  host enforcement (`policy.json` + `use-sigstore-attachments`) uses the
+  containers/image library, not the cosign CLI default, and was never
+  affected. README and ONBOARDING.md updated to add the flag and explain
+  why. The keyless-signing migration that would let the flagless default
+  v3 command work is already roadmapped in KEY-POLICY.md (out of scope
+  here).
 
 ---
 
@@ -583,3 +628,5 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-06-11 — repo-review remainders landed: README/`private-egress.md` now state the Tailscale dependency explicitly (one deliberate vendor commitment; Headscale documented as the self-hosted escape hatch; Mullvad-exit-node recipe flagged as Tailscale-SaaS-only). `anaconda-iso` leg removed from `build-disk.yml` and `iso-kde.toml` deleted — the ISO/local installer was dropped from the roadmap; qcow2 (cloud image) is the deliverable. Item 34 opened for the cosign v3 `verify --key` failure; README documents the v2 requirement until it's root-caused.
 - 2026-06-23 — item 24 done: vendored `nvidia-container-toolkit.repo` flipped to `gpgcheck=1` (both stanzas) so NVIDIA RPMs are package-signature-verified at install, not metadata-only; all vendored repos now `gpgcheck=1`. Documented in SECURITY.md ("Build-time package integrity") and amended #19's gpgcheck-variance note. `vendor-drift-watch.yml` given a per-entry `normalize` sed so this deliberate deviation from upstream's `gpgcheck=0` doesn't trip a weekly false-positive drift issue (or get curl-reverted). Validation is the green CI build with `gpgcheck=1` against NVIDIA's real RPM signatures.
 - 2026-06-23 — item 20 done, but pre-flight first exposed a bigger bug: the SBOM-based grype scan had been **vacuous since 2026-05-23** (no `os-release` in `syft scan dir:` input → no distro → zero matches; customers gryping the published SBOM got false-clean too). Fixed by staging `os-release` into `sbom-input` (Option B — fixes the gate and the published SBOM) plus two anti-regression guards. Then enabled the gate: `build.yml` grype runs `--fail-on critical` (PR-gate; blocks publish too since push/sign/attest follow it), waivers in a committed `.grype.yaml` (seeded with a short-dated xdg-desktop-portal waiver, fixed upstream, clears at next base bump). Policy in SECURITY.md ("Vulnerability gating"); #3 annotated with the vacuous-scan correction. Real findings at this digest: 1 Critical (waived) + 3 High + 1 Medium, all fixed upstream.
+- 2026-06-23 — item 34 done: root-caused the cosign v3 `verify --key` failure to v3's `--new-bundle-format=true` default — it discovers the keyless provenance/SBOM OCI referrers (Fulcio-cert bundles) instead of the legacy `.sig` key signature, and rejects them against `--key`. Fixed docs-only by documenting `--new-bundle-format=false`; verified VERIFIED on cosign v3.0.6 *and* v2.6.1 against the live published `:latest`, so one command works on both. README + ONBOARDING.md updated to add the flag and explain why. No signing/CI change; installed-host policy enforcement was never affected.
+- 2026-06-23 — item 35 opened: CI builds + statically validates images (bootc lint, payload guard, #30 kernel↔akmods check) but never boots them — no pre-publish smoke test confirms the image comes up, the NVIDIA stack initializes, and key services start. Surfaced during the #20 discussion as the gap "test before release" doesn't yet cover; "CVE-clean" and "boots" are independent guarantees. Non-trivial (GPU-on-runner is the hard part); depth (OS-boot vs GPU-inclusive) TBD.
