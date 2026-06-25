@@ -10,7 +10,7 @@ This is the public image foundation for the [Emryk Workstation](https://emryk.co
 
 **Base:** `ghcr.io/ublue-os/kinoite-main:latest` — stock Fedora Kinoite with UBlue's RPMFusion, hardware quirk fixes, and `bootc` integration.
 
-**NVIDIA:** Open kernel modules via `ghcr.io/ublue-os/akmods-nvidia-open:latest`, installed in a multi-stage build so the pre-built modules match the base image's kernel exactly. The **NVIDIA Container Toolkit** is layered on top, and `nvidia-cdi-generate.service` regenerates the CDI spec (`/etc/cdi/nvidia.yaml`) at every boot so the GPU stays exposed to rootless containers across base-image rebases — see [GPU in containers](#gpu-in-containers) below.
+**NVIDIA:** Open kernel modules via `ghcr.io/ublue-os/akmods-nvidia-open:latest`, installed in a multi-stage build so the pre-built modules match the base image's kernel exactly. The **NVIDIA Container Toolkit** is installed by the same akmods setup, and `ublue-nvctk-cdi.service` regenerates the CDI spec (`/etc/cdi/nvidia.yaml`) at every boot so the GPU stays exposed to rootless containers across base-image rebases — see [GPU in containers](#gpu-in-containers) below.
 
 **Packages installed on top of the base:**
 
@@ -28,7 +28,7 @@ This is the public image foundation for the [Emryk Workstation](https://emryk.co
 | `gh` | GitHub CLI |
 | `git` / `curl` / `wget` | Standard tooling |
 
-**Systemd services enabled:** `tailscaled`, `cockpit.socket`, `bootc-fetch-apply-updates.timer`, `nvidia-cdi-generate.service` (regenerates the GPU CDI spec each boot), `flatpak-system-update.timer` (daily Flatpak updates), `emryk-update-nudge.timer` (staged-update login banner), and `emryk-install-flatpaks.service` (first-boot Firefox install). The **rootless** per-user `podman.socket` is enabled globally (every user gets `/run/user/$UID/podman/podman.sock` automatically); the rootful system `podman.socket` is deliberately disabled — see "Containers" below.
+**Systemd services enabled:** `tailscaled`, `cockpit.socket`, `bootc-fetch-apply-updates.timer`, `ublue-nvctk-cdi.service` (regenerates the GPU CDI spec each boot), `flatpak-system-update.timer` (daily Flatpak updates), `emryk-update-nudge.timer` (staged-update login banner), and `emryk-install-flatpaks.service` (first-boot Firefox install). The **rootless** per-user `podman.socket` is enabled globally (every user gets `/run/user/$UID/podman/podman.sock` automatically); the rootful system `podman.socket` is deliberately disabled — see "Containers" below.
 
 **Flatpaks:** Firefox is installed from Flathub at first boot via a oneshot systemd service (`emryk-install-flatpaks.service`). Network is required on first boot for this step. `flatpak-system-update.timer` then keeps system Flatpaks current daily.
 
@@ -113,7 +113,7 @@ Container workloads run **rootless** by default. The rootless `podman.socket` is
 
 ### GPU in containers
 
-The NVIDIA Container Toolkit is installed, and `nvidia-cdi-generate.service` writes a fresh [CDI](https://github.com/cncf-tags/container-device-interface) spec to `/etc/cdi/nvidia.yaml` on every boot — so the device names stay in sync with the running driver even after a base-image rebase swaps the kernel and modules. No per-boot `nvidia-ctk` invocation, no `--privileged`, no rootful daemon.
+The NVIDIA Container Toolkit is installed, and `ublue-nvctk-cdi.service` writes a fresh [CDI](https://github.com/cncf-tags/container-device-interface) spec to `/etc/cdi/nvidia.yaml` on every boot — so the device names stay in sync with the running driver even after a base-image rebase swaps the kernel and modules. No per-boot `nvidia-ctk` invocation, no `--privileged`, no rootful daemon.
 
 Run a GPU workload rootless with Podman:
 

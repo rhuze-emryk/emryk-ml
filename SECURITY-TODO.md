@@ -108,6 +108,9 @@ new ones when threat-model assumptions change.
   **Update (2026-06-23): #24 closed this** — the vendored
   `nvidia-container-toolkit.repo` now sets `gpgcheck=1`, so all vendored
   repos verify package signatures at install time.
+  **Update (2026-06-25): #25 retired the file** — the redundant toolkit
+  install was removed (upstream akmods installs it, already `gpgcheck=1`),
+  so the only vendored repo left is `tailscale.repo`, which is `gpgcheck=1`.
 
 - [x] **24. Close the `gpgcheck=0` gap on vendored `nvidia-container-toolkit.repo`.** _(2026-06-23)_
   `build_files/nvidia-container-toolkit.repo` mirrored upstream's
@@ -136,6 +139,18 @@ new ones when threat-model assumptions change.
 
   Verification is the green CI build on the PR (the first build with
   `gpgcheck=1` against NVIDIA's actual stable RPM signatures).
+
+  **Amended 2026-06-25 (by #25):** the "stricter than upstream" premise above
+  was wrong. Upstream akmods already flips its own toolkit repo to
+  `gpgcheck=1` (`build-ublue-os-nvidia-addons.sh`) and installs
+  `nvidia-container-toolkit` *before* our `build.sh` runs — so our `dnf5
+  install` was a no-op and our `gpgcheck=1` never actually gated that package.
+  #25 retired the redundant install and the vendored
+  `nvidia-container-toolkit.repo` entirely; the package-signature guarantee
+  for the toolkit now rides on upstream (same `gpgcheck=1` posture). #24's
+  lasting value is narrower than first stated: it left all *remaining*
+  vendored repos (`tailscale.repo`) consistently `gpgcheck=1`. SECURITY.md's
+  "Build-time package integrity" paragraph was corrected to match.
 
 ## Medium priority — hardening and defense in depth
 
@@ -268,7 +283,7 @@ new ones when threat-model assumptions change.
   interaction (an unwaived critical blocks base-bump auto-merge — that's the
   point, but it means accepted findings must be waived promptly).
 
-- [ ] **25. Remove redundant `nvidia-container-toolkit` install + CDI service from base `build.sh`.**
+- [x] **25. Remove redundant `nvidia-container-toolkit` install + CDI service from base `build.sh`.** _(2026-06-25)_
   PR #13 added `nvidia-container-toolkit` to `build_files/build.sh`'s
   dnf list and shipped a new `/etc/systemd/system/nvidia-cdi-generate.service`
   heredoc that runs `nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml`
@@ -289,6 +304,20 @@ new ones when threat-model assumptions change.
   PR #13's stated benefit ("distrobox-GPU on `:latest`") was already
   provided by upstream akmods before the PR; this item un-does the
   net-no-op work.
+
+  Done (chose full removal): dropped the `nvidia-container-toolkit` line and
+  the `nvidia-cdi-generate.service` heredoc + `systemctl enable` from
+  `build.sh`, deleted the vendored `build_files/nvidia-container-toolkit.repo`
+  and its `cp`, and removed the now-orphaned `nvidia-container-toolkit` entry
+  (plus the `normalize` machinery added by #24) from `vendor-drift-watch.yml`.
+  Verified against the pinned upstream source first: `nvidia-install.sh`
+  installs the toolkit (`NVIDIA_RPMS`, line 89) with `gpgcheck=1`
+  (`build-ublue-os-nvidia-addons.sh`, line 23) and enables
+  `ublue-nvctk-cdi.service` (line 106), whose unit writes the identical
+  `--output=/etc/cdi/nvidia.yaml`. README's three `nvidia-cdi-generate.service`
+  references and the `#24` SECURITY.md paragraph were updated to match. Net
+  effect: one less boot-time race, and the toolkit version is now pinned to
+  the akmods digest instead of tracking NVIDIA's live repo at build time.
 
 - [x] **26. Extend `build-private-ml.yml` path filter to include vendored `.repo` files.** _(2026-05-29 — obsoleted by removal)_
   Obsoleted by item #33: the private-ml variant, its `build-private-ml.yml`
@@ -630,3 +659,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-06-23 — item 20 done, but pre-flight first exposed a bigger bug: the SBOM-based grype scan had been **vacuous since 2026-05-23** (no `os-release` in `syft scan dir:` input → no distro → zero matches; customers gryping the published SBOM got false-clean too). Fixed by staging `os-release` into `sbom-input` (Option B — fixes the gate and the published SBOM) plus two anti-regression guards. Then enabled the gate: `build.yml` grype runs `--fail-on critical` (PR-gate; blocks publish too since push/sign/attest follow it), waivers in a committed `.grype.yaml` (seeded with a short-dated xdg-desktop-portal waiver, fixed upstream, clears at next base bump). Policy in SECURITY.md ("Vulnerability gating"); #3 annotated with the vacuous-scan correction. Real findings at this digest: 1 Critical (waived) + 3 High + 1 Medium, all fixed upstream.
 - 2026-06-23 — item 34 done: root-caused the cosign v3 `verify --key` failure to v3's `--new-bundle-format=true` default — it discovers the keyless provenance/SBOM OCI referrers (Fulcio-cert bundles) instead of the legacy `.sig` key signature, and rejects them against `--key`. Fixed docs-only by documenting `--new-bundle-format=false`; verified VERIFIED on cosign v3.0.6 *and* v2.6.1 against the live published `:latest`, so one command works on both. README + ONBOARDING.md updated to add the flag and explain why. No signing/CI change; installed-host policy enforcement was never affected.
 - 2026-06-23 — item 35 opened: CI builds + statically validates images (bootc lint, payload guard, #30 kernel↔akmods check) but never boots them — no pre-publish smoke test confirms the image comes up, the NVIDIA stack initializes, and key services start. Surfaced during the #20 discussion as the gap "test before release" doesn't yet cover; "CVE-clean" and "boots" are independent guarantees. Non-trivial (GPU-on-runner is the hard part); depth (OS-boot vs GPU-inclusive) TBD.
+- 2026-06-25 — item 25 done (full removal): dropped the redundant `nvidia-container-toolkit` `dnf5 install` line, the `nvidia-cdi-generate.service` heredoc + its `systemctl enable`, and the vendored `nvidia-container-toolkit.repo` (+ its `cp` and its `vendor-drift-watch.yml` entry, including the `normalize` machinery #24 added). Verified against the digest-pinned upstream first: akmods `nvidia-install.sh` already installs the toolkit (`gpgcheck=1`, set in `build-ublue-os-nvidia-addons.sh`) and enables `ublue-nvctk-cdi.service` — whose unit writes the identical `/etc/cdi/nvidia.yaml` — before our `build.sh` runs, so the removals open no gap and end one boot-time write race. Also corrected #24's "stricter than upstream" claim (upstream already does `gpgcheck=1`) in both this file and SECURITY.md, and renamed the three README `nvidia-cdi-generate.service` references to the upstream unit. Side benefit: toolkit version now tracks the akmods digest pin instead of NVIDIA's live repo at build time. Validation is the green CI build on the PR.
