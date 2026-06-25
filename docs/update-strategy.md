@@ -29,8 +29,9 @@ Fedora 44                       upstream distro; ships CVE fixes continuously
 
 Two upstreams feed the build: **`kinoite-main`** (the OS, incl. the kernel and
 all userland) and **`akmods-nvidia-open`** (the GPU driver, prebuilt to match a
-specific kernel). Everything else — Tailscale, the NVIDIA container toolkit,
-the ~20 `dnf` packages, the Firefox flatpak — is layered on by `build_files/`.
+specific kernel). Everything else — Tailscale, the ~20 `dnf` packages, the Firefox flatpak — is
+layered on by `build_files/`. (The NVIDIA container toolkit rides in with the
+`akmods-nvidia-open` setup, not our `dnf` layer — see SECURITY-TODO #25.)
 
 Both upstreams are **pinned by digest** in `Containerfile`
 (`tag@sha256:…`), so an upstream tag rewrite can never silently change what we
@@ -138,7 +139,7 @@ human. This is exactly what makes digest auto-merge safe.
 | akmods **tag** kernel string | — | **Manual** (coupling check blocks the merge until done) |
 | GitHub Action SHAs, `GRYPE_VERSION`/`SYFT_VERSION` | Renovate | PR, auto-assigned, human-merged |
 | Known-CVE deps (Actions, future pip/etc.) | Renovate `osvVulnerabilityAlerts` + `security` label | PR, human-merged |
-| Vendored `.repo` drift (Tailscale/Mullvad/NVIDIA-ct) | `vendor-drift-watch.yml` (weekly) | Opens an issue; human refresh |
+| Vendored `.repo` drift (Tailscale) | `vendor-drift-watch.yml` (weekly) | Opens an issue; human refresh |
 | Layered `dnf` packages | the scheduled rebuild | Auto (pulled live each build) |
 | Scheduled rebuild + publish | `build.yml` `cron: '05 10 * * MON'` | Weekly — the only routine publish |
 | Publish to GHCR (push/sign/attest) | weekly Monday build + manual `workflow_dispatch`, gated by the `production-signing` environment (PR #41) | **Manual** one-click approval per publishing run; a push/merge alone never publishes |

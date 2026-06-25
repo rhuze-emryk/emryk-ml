@@ -16,7 +16,6 @@ This is the public image foundation for the [Emryk Workstation](https://emryk.co
 
 | Package | Purpose |
 |---|---|
-| `nvidia-container-toolkit` | Pass the host GPU into rootless Podman/distrobox containers via CDI |
 | `tailscale` | Team VPN |
 | `wireguard-tools` | WireGuard primitives |
 | `cockpit` | Remote browser-based management |
