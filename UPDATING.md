@@ -123,7 +123,7 @@ registry moves only on the Monday build or a manual `workflow_dispatch`.
   assigned to you, human-merged.
 - **Known-CVE dependency fixes** — Renovate, labelled `security`, human-merged.
 - **Vendored `.repo` drift** — `vendor-drift-watch.yml` opens/updates an issue
-  weekly if Tailscale/NVIDIA-toolkit upstream changed.
+  weekly if Tailscale upstream changed.
 - **Weekly publish** — `build.yml` `cron: '05 10 * * MON'` rebuilds (refreshing
   the ~20 layered `dnf` packages) and, after your approval, signs and ships
   everything merged to `main` since last week.

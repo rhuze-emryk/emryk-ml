@@ -13,23 +13,13 @@ echo -e "blacklist nouveau\noptions nouveau modeset=0" \
 # without a PR landing in this repo first. (SECURITY-TODO #6)
 cp /ctx/tailscale.repo /etc/yum.repos.d/tailscale.repo
 
-# NVIDIA Container Toolkit
-# Vendored from
-#   https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
-# and checked into build_files/ — same threat model as the Mullvad and
-# tailscale repo files: a CDN-level compromise that swaps either field
-# cannot affect us without a PR landing in this repo first. The vendored
-# file includes both the stable (enabled) and experimental (disabled)
-# sections verbatim from upstream; only the stable section is consumed by
-# the dnf install below. Required so Podman can pass the host GPU into
-# containers via CDI; the base image already ships the NVIDIA kernel
-# modules via akmods-nvidia-open, so the toolkit completes the
-# host-to-container GPU path for distrobox and any other rootless podman
-# workload. The CDI spec itself is generated at first boot (see
-# nvidia-cdi-generate.service) because nvidia-ctk has to inspect the live
-# kernel modules.
-cp /ctx/nvidia-container-toolkit.repo /etc/yum.repos.d/nvidia-container-toolkit.repo
-
+# NVIDIA Container Toolkit and its CDI generator are NOT installed here: the
+# base image's upstream akmods nvidia-install.sh already installs
+# `nvidia-container-toolkit` (signature-verified — it sets gpgcheck=1 on its
+# own toolkit repo) and enables `ublue-nvctk-cdi.service` to regenerate the
+# CDI spec at boot. Duplicating either here was a no-op install plus a second
+# oneshot racing upstream's unit to write /etc/cdi/nvidia.yaml (SECURITY-TODO
+# #25). We rely on upstream for both; we pin the akmods image by digest.
 dnf5 install -y \
     btop \
     cockpit \
@@ -42,7 +32,6 @@ dnf5 install -y \
     htop \
     kde-gtk-config \
     neovim \
-    nvidia-container-toolkit \
     podman-compose \
     podman-docker \
     tailscale \
@@ -75,26 +64,6 @@ Type=oneshot
 ExecStart=/usr/libexec/emryk/install-flatpaks.sh
 RemainAfterExit=yes
 StandardOutput=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# NVIDIA CDI spec generator
-# Runs at every boot so the spec stays in sync with the running driver after
-# a base-image rebase. nvidia-ctk inspects loaded modules, so this can only
-# run on a live system — not at image build time.
-cat > /etc/systemd/system/nvidia-cdi-generate.service <<'EOF'
-[Unit]
-Description=Generate NVIDIA CDI spec for Podman GPU passthrough
-Documentation=https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/cdi-support.html
-After=local-fs.target
-
-[Service]
-Type=oneshot
-ExecStartPre=/usr/bin/mkdir -p /etc/cdi
-ExecStart=/usr/bin/nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
-RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -286,7 +255,6 @@ systemctl enable \
     emryk-install-flatpaks.service \
     emryk-update-nudge.timer \
     flatpak-system-update.timer \
-    nvidia-cdi-generate.service \
     tailscaled.service
 
 # SECURITY-TODO #11: the system podman.socket runs as root and is the
