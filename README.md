@@ -68,8 +68,8 @@ Mechanism — the image declares its perimeter explicitly:
 
 | Interface | Zone | What's reachable |
 |---|---|---|
-| ethernet / wifi (untrusted) | `public` (default) | `ssh` only (key-only, no password, no root — see SSH hardening below) + `dhcpv6-client`. Cockpit, mDNS, Samba, and all high ports are closed. |
-| `tailscale0` (your trust boundary) | `tailscale` (`target=ACCEPT`) | Everything. Full operator access — Cockpit, ad-hoc HTTP servers, anything you bind. |
+| ethernet / wifi (untrusted) | `public` (default) | `dhcpv6-client` only. SSH, Cockpit, mDNS, Samba, and all high ports are closed — the entire management plane lives on the tailnet. |
+| `tailscale0` (your trust boundary) | `tailscale` (`target=ACCEPT`) | Everything. Full operator access — SSH (key-only, no password, no root — see SSH hardening below), Cockpit, ad-hoc HTTP servers, anything you bind. |
 | `lo` (loopback) | unfiltered | Local apps unaffected. |
 
 The default zone is **`public`**, not Fedora's stock `FedoraWorkstation` — the latter is permissive for desktop use and allows TCP/UDP 1025–65535 wide open, which is inappropriate for a workstation that may sit on a hostile LAN or a public IP.

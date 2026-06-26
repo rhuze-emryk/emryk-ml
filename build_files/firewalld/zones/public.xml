@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <zone>
   <short>Public</short>
-  <description>Untrusted networks (LAN, internet). Only SSH (key-only, see /etc/ssh/sshd_config.d/10-emryk.conf) and DHCPv6 client are accepted. The management plane — Cockpit and everything else — lives on the tailscale zone; see /etc/firewalld/zones/tailscale.xml.</description>
-  <service name="ssh"/>
+  <description>Untrusted networks (LAN, internet). Only the DHCPv6 client is accepted. The entire management plane — SSH and Cockpit — lives on the tailscale zone; see /etc/firewalld/zones/tailscale.xml. SSH is hardened key-only regardless (see /etc/ssh/sshd_config.d/10-emryk.conf).</description>
   <service name="dhcpv6-client"/>
 </zone>
