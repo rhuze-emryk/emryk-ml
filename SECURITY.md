@@ -21,7 +21,7 @@ The `bootc-fetch-apply-updates.timer` enabled in the image fetches updates rough
 |---|---|---|
 | Malicious image substitution (registry tampering, MITM, supply-chain compromise of GHCR) | All images from `ghcr.io/rhuze-emryk` are cosign-signed; installed hosts verify the signature on every pull. SLSA build provenance and CycloneDX SBOM are also attached as Sigstore-signed OCI referrers for independent verification | `/etc/containers/policy.json` + `/etc/pki/containers/rhuze-emryk.pub`; `gh attestation verify` for provenance/SBOM |
 | Upstream base-image silent rewrite (`:latest` tag pointing at a new manifest) | Base images are pinned by digest, not tag | `Containerfile` |
-| Wide LAN / internet exposure of management plane | Default firewall zone restricts ingress to SSH only; Cockpit and other ports are reachable only over Tailscale | `/etc/firewalld/zones/public.xml` and `tailscale.xml` |
+| Wide LAN / internet exposure of management plane | Default firewall zone (`public`) accepts only the DHCPv6 client; the entire management plane — SSH and Cockpit — is reachable only over Tailscale | `/etc/firewalld/zones/public.xml` and `tailscale.xml` |
 | Unauthenticated SSH access (password brute force, root login) | Key-only authentication, no root login, no keyboard-interactive | `/etc/ssh/sshd_config.d/10-emryk.conf` |
 | Local privilege escalation via container API | Rootful `podman.socket` is disabled; rootless per-user socket enabled by default — scoped to the user's own privileges, with no path to root | `build_files/build.sh` |
 | Unattended reboots killing long-running workloads | Auto-update timer fetches and stages updates only; never reboots automatically | `bootc-fetch-apply-updates.service.d/10-emryk.conf` |

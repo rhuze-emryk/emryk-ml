@@ -163,12 +163,12 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
-# SSH hardening — key-only auth, no root login over SSH. Cloud workstations
-# with public IPs get scanned constantly; password auth and root login are
-# the two biggest brute-force surfaces. Drops into sshd_config.d so it
-# overrides Fedora defaults without editing the main sshd_config. Users who
-# need different behavior can drop their own file with a higher-numbered
-# prefix. (SECURITY-TODO #5)
+# SSH hardening — key-only auth, no root login over SSH. SSH is reachable over
+# the tailscale zone only (see the firewall config below, and #36), so this is
+# defense-in-depth on the tailnet path rather than a shield against open-internet
+# scanning. Drops into sshd_config.d so it overrides Fedora defaults without
+# editing the main sshd_config. Users who need different behavior can drop their
+# own file with a higher-numbered prefix. (SECURITY-TODO #5; reachability #36)
 mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/10-emryk.conf <<'EOF'
 PermitRootLogin no
@@ -210,11 +210,13 @@ install -m 0644 /ctx/firewalld/zones/tailscale.xml \
 # FedoraWorkstation as the default zone, which allows TCP/UDP 1025-65535
 # wide open plus services like cockpit and samba-client — wholly
 # inappropriate for an internet-exposed workstation. We:
-#  1. Override /etc/firewalld/zones/public.xml to keep only ssh + dhcpv6
-#     (mdns removed; cockpit removed; everything else dropped).
+#  1. Override /etc/firewalld/zones/public.xml to keep only dhcpv6-client
+#     (ssh moved to the tailscale zone per #36; mdns, cockpit, and everything
+#     else dropped).
 #  2. Set public as the default zone, so any NM connection without an
 #     explicit zone falls back to this strict baseline.
-# Management access continues to flow over the tailscale zone (item #4).
+# Management access — SSH and Cockpit — flows over the tailscale zone
+# (items #4, #36).
 install -m 0644 /ctx/firewalld/zones/public.xml \
     /etc/firewalld/zones/public.xml
 firewall-offline-cmd --set-default-zone=public
@@ -249,12 +251,20 @@ mkdir -p /etc/systemd/system/bootc-fetch-apply-updates.service.d
 install -m 0644 /ctx/systemd/bootc-fetch-apply-updates.service.d/10-emryk.conf \
     /etc/systemd/system/bootc-fetch-apply-updates.service.d/10-emryk.conf
 
+# Enable the services the image relies on. sshd.service in particular MUST be
+# enabled explicitly: the inherited 81-desktop systemd preset disables it (and
+# sorts before 90-default's enable, so it wins). Without this, an install would
+# ship the SSH hardening (#5) and open the firewall but never run sshd — TCP:22
+# refused on a fresh boot, SSH reachable only via systemd-ssh-generator's
+# vsock/unix sockets. SSH is scoped to the tailscale zone by the firewall
+# (#9, #36). (SECURITY-TODO #36)
 systemctl enable \
     bootc-fetch-apply-updates.timer \
     cockpit.socket \
     emryk-install-flatpaks.service \
     emryk-update-nudge.timer \
     flatpak-system-update.timer \
+    sshd.service \
     tailscaled.service
 
 # SECURITY-TODO #11: the system podman.socket runs as root and is the

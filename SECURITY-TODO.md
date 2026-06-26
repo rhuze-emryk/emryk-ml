@@ -212,6 +212,12 @@ new ones when threat-model assumptions change.
   back to `public` automatically on reboot, but `nmcli c modify <conn>
   connection.zone public` is the manual fix if not.
 
+  Update (2026-06-26): #36 corrected the perimeter — `public.xml` now keeps
+  only `dhcpv6-client`; `ssh` moved to the `tailscale` zone. (It was never
+  actually reachable on `public` anyway: `sshd.service` was disabled by the
+  inherited desktop preset until #36 enabled it.) Untrusted networks now see
+  nothing but DHCPv6; SSH and Cockpit both live on the tailnet.
+
 - [x] **10. Pin every GitHub Action by SHA.** _(2026-05-22)_
   Audited every `uses:` line in `build.yml`, `build-private-ml.yml`,
   `build-disk.yml`. The only branch-tracking ref —
@@ -352,6 +358,32 @@ new ones when threat-model assumptions change.
   check. Decide the depth (OS-boot-only vs GPU-inclusive) when picking this up.
   Closing condition: a pre-publish boot smoke test that blocks the release on
   failure, at an agreed depth.
+
+- [x] **36. Enable `sshd.service`; scope SSH to the tailscale zone.** _(2026-06-26)_
+  Building the #35 boot test surfaced this: a fresh install **advertised SSH
+  but never ran it.** `build.sh` ships the key-only hardening drop-in (#5) and
+  `public.xml` opened the firewall for `ssh` (#9), but nothing ever enabled
+  `sshd.service`. The inherited `81-desktop.preset`'s `disable sshd.service`
+  therefore won (it sorts before `90-default.preset`'s `enable`), so on a clean
+  boot the only SSH listeners are `systemd-ssh-generator`'s vsock + unix
+  sockets — TCP:22 is refused. (Existing dev boxes work only because
+  `sshd.service` got enabled in `/etc` post-install: local drift, not the
+  shipped image.) `public.xml` also contradicted itself — its description said
+  "the management plane lives on the tailscale zone," yet it accepted `ssh` on
+  the untrusted public zone.
+  Fix (the actual original intent — SSH over Tailscale only):
+   1. `build.sh` adds `sshd.service` to the `systemctl enable` list. An explicit
+      enable overrides the preset — the same mechanism already used for
+      `tailscaled` / `cockpit.socket` (both verified to come up on a fresh VM
+      boot).
+   2. `public.xml` drops `<service name="ssh"/>`; only `dhcpv6-client` remains.
+      SSH now reaches the host only via the `tailscale` zone (`target=ACCEPT`)
+      — over the tailnet, refused on LAN/internet. Cockpit was already
+      Tailscale-only (#4); SSH now matches, and `public.xml` is self-consistent.
+  The key-only hardening (#5) is unchanged and stays as defense-in-depth on the
+  tailnet path.
+  Validation: asserted by the #35 boot smoke test (`sshd.service` enabled +
+  listening; `public` zone does not allow `ssh`; `ssh-access.target` reached).
 
 ## Low priority — worth doing eventually
 
@@ -660,3 +692,4 @@ These come up in generic hardening checklists but are not a fit here:
 - 2026-06-23 — item 34 done: root-caused the cosign v3 `verify --key` failure to v3's `--new-bundle-format=true` default — it discovers the keyless provenance/SBOM OCI referrers (Fulcio-cert bundles) instead of the legacy `.sig` key signature, and rejects them against `--key`. Fixed docs-only by documenting `--new-bundle-format=false`; verified VERIFIED on cosign v3.0.6 *and* v2.6.1 against the live published `:latest`, so one command works on both. README + ONBOARDING.md updated to add the flag and explain why. No signing/CI change; installed-host policy enforcement was never affected.
 - 2026-06-23 — item 35 opened: CI builds + statically validates images (bootc lint, payload guard, #30 kernel↔akmods check) but never boots them — no pre-publish smoke test confirms the image comes up, the NVIDIA stack initializes, and key services start. Surfaced during the #20 discussion as the gap "test before release" doesn't yet cover; "CVE-clean" and "boots" are independent guarantees. Non-trivial (GPU-on-runner is the hard part); depth (OS-boot vs GPU-inclusive) TBD.
 - 2026-06-25 — item 25 done (full removal): dropped the redundant `nvidia-container-toolkit` `dnf5 install` line, the `nvidia-cdi-generate.service` heredoc + its `systemctl enable`, and the vendored `nvidia-container-toolkit.repo` (+ its `cp` and its `vendor-drift-watch.yml` entry, including the `normalize` machinery #24 added). Verified against the digest-pinned upstream first: akmods `nvidia-install.sh` already installs the toolkit (`gpgcheck=1`, set in `build-ublue-os-nvidia-addons.sh`) and enables `ublue-nvctk-cdi.service` — whose unit writes the identical `/etc/cdi/nvidia.yaml` — before our `build.sh` runs, so the removals open no gap and end one boot-time write race. Also corrected #24's "stricter than upstream" claim (upstream already does `gpgcheck=1`) in both this file and SECURITY.md, and renamed the three README `nvidia-cdi-generate.service` references to the upstream unit. Side benefit: toolkit version now tracks the akmods digest pin instead of NVIDIA's live repo at build time. Validation is the green CI build on the PR.
+- 2026-06-26 — item 36 done: enabled `sshd.service` and scoped SSH to the tailscale zone. Building the #35 boot test revealed fresh installs refused SSH entirely — `build.sh` shipped the key-only drop-in (#5) and `public.xml` opened the firewall for `ssh` (#9), but `sshd.service` was never enabled, so the inherited `81-desktop` preset's `disable` won (sorts before `90-default`'s enable) and only systemd-ssh-generator's vsock/unix sockets came up (TCP:22 refused; existing dev boxes work only via post-install `/etc` drift). Fix matches the original intent: `build.sh` now enables `sshd.service` explicitly (overrides the preset — same path as `tailscaled`/`cockpit.socket`), and `public.xml` drops `ssh` so SSH flows over the `tailscale` zone only (Cockpit already did, #4); `public` keeps only `dhcpv6-client`. Key-only hardening (#5) unchanged. To be asserted by the #35 smoke test.

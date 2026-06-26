@@ -43,10 +43,10 @@ Each of these is a real, shipped property of the image — not aspirational:
 | Management plane reachable only over Tailscale | firewalld zones (`tailscale` zone + restrictive `public` zone) | "Cockpit and remote management never touch the open internet — only your tailnet." |
 | Updates fetch + stage, never auto-reboot | bootc timer + service drop-in | **Strong workstation differentiator.** "A 14-hour training run is never killed by an unattended security update — you reboot when you choose." Most cloud GPU products can't say this. |
 | Rootless containers by default | rootful `podman.socket` disabled, rootless socket globally enabled | "Container workloads cannot escalate to root via the Docker socket." |
-| SSH key-only, no root, no password | sshd drop-in | "SSH cannot be brute-forced; password and root login are off." |
+| SSH over Tailscale only, key-only, no root, no password | sshd drop-in + firewall zones | "SSH isn't even exposed on untrusted networks — it's reachable over the tailnet only, and even there it's key-only, with password and root login off." |
 | SELinux enforcing | `/etc/selinux/config` declared in image | "SELinux protects against process escape on every host." |
 | Auto-update Flatpaks | `flatpak-system-update.timer` | "Firefox and other system flatpaks receive security updates daily without intervention." |
-| Restricted default firewall zone | `/etc/firewalld/zones/public.xml` | "On any untrusted network, only SSH is reachable — everything else closed." |
+| Restricted default firewall zone | `/etc/firewalld/zones/public.xml` | "On any untrusted network, nothing but the DHCPv6 client is reachable — SSH, Cockpit, everything else closed; management flows over Tailscale." |
 | All CI dependencies SHA-pinned | every GitHub Action pinned by SHA + digest; Renovate keeps current | "Our build pipeline cannot be hijacked by a moving-tag action; a bot keeps pins current." |
 | Annual signing-key rotation | `KEY-POLICY.md` + scheduled rotation routine | "We rotate our signing key annually, with a graceful transition window — never a hard cutover that breaks customer hosts." |
 | CVE-scanned at every build | Grype in CI | "Every published image has its CVE report attached to the build run." |
