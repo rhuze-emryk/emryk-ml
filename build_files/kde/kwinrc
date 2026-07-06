@@ -1,0 +1,11 @@
+# System-wide KWin defaults for Emryk Workstation (KConfig cascade: a user's
+# ~/.config/kwinrc overrides anything here, so these are defaults, not policy).
+#
+# InputMethod: explicitly empty. Plasma 6.6 ships plasma-keyboard (Maliit's
+# replacement) as the compiled-in default virtual keyboard and it auto-raises
+# at the greeter and on first login — wrong default for a non-touch ML
+# workstation. An explicitly-empty value beats the compiled-in default; an
+# absent key would not. Re-enable per user via System Settings > Keyboard >
+# Virtual Keyboard (writes to ~/.config/kwinrc, this file stays untouched).
+[Wayland]
+InputMethod=

@@ -221,6 +221,18 @@ install -m 0644 /ctx/firewalld/zones/public.xml \
     /etc/firewalld/zones/public.xml
 firewall-offline-cmd --set-default-zone=public
 
+# Disable the Plasma onscreen keyboard by default. Fedora 44's Plasma 6.6
+# base ships plasma-keyboard (KDE's new touch OSK, Maliit's replacement) as
+# the compiled-in default input method, and it auto-raises at the login
+# greeter and in-session on first boot — confusing and broken-looking on a
+# non-touch ML workstation. The package cannot be removed (plasma-desktop's
+# dependency chain pulls it back in), so we ship /etc/xdg/kwinrc with an
+# explicitly-empty InputMethod, which overrides the compiled-in default for
+# both the plasma-login greeter and user sessions. Per-user opt-in via
+# System Settings still works — user config overrides /etc/xdg.
+mkdir -p /etc/xdg
+install -m 0644 /ctx/kde/kwinrc /etc/xdg/kwinrc
+
 # SECURITY-TODO #15: assert SELinux is enforcing rather than relying on
 # the Fedora default. Fedora ships enforcing by default — we ship an
 # explicit /etc/selinux/config so that asserting this is part of the
