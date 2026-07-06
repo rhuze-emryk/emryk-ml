@@ -13,9 +13,4 @@
 # that's when upstream fixes actually land. Every waiver is reviewed in PR like
 # any other change.
 
-ignore:
-  # xdg-desktop-portal critical — FIXED upstream in 1.22.1-1.fc44; the
-  # digest-pinned base just hasn't picked it up yet. Short-dated: remove once a
-  # base bump clears it. Opened 2026-06-23.
-  - vulnerability: FEDORA-2026-d8f8abf763
-    reason: "Fixed upstream in xdg-desktop-portal 1.22.1-1.fc44; awaiting base-digest bump. Re-check at next base bump (opened 2026-06-23)."
+ignore: []
