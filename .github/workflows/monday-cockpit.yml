@@ -119,6 +119,14 @@ jobs:
           # values are passed as printf args (never embedded in the format).
           {
             printf '## 🗓️ Monday cockpit — %s\n\n' "$today"
+            # The @mention below is load-bearing, not decoration: it forces a
+            # GitHub email notification to the maintainer regardless of issue
+            # subscription state. The maintainer's whole low-effort operating
+            # model is "one cockpit email every Monday; read it, do what it
+            # says; NO email by Monday evening = the automation itself is
+            # broken, go look at Actions." Remove the mention and that
+            # dead-man's switch goes silent.
+            printf '@%s — your one weekly email. If a Monday ever passes without it, the cockpit itself is broken: check the Actions tab.\n\n' "${GH_REPO%%/*}"
             echo 'Top to bottom. Doing nothing is safe — last week'\''s signed image stays live.'
             echo
             if [ -n "$stale" ]; then
