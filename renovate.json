@@ -5,6 +5,7 @@
   ],
   "timezone": "Etc/UTC",
   "schedule": [
+    "every weekend",
     "before 9am on monday"
   ],
   "osvVulnerabilityAlerts": true,
