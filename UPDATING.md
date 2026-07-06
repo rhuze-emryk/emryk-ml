@@ -44,10 +44,14 @@ change waits another week.
    dance* ([Reference §1](#1-the-coupling-dance--rolling-the-base-kernel-forward)).
    If you're unsure ublue has published the matching `akmods-nvidia-open` image
    yet, **leave it unmerged.** Waiting is always safe; merging a mismatch is not.
-4. **Approve the publish.** The Monday build runs (10:05 UTC) and pauses at the
-   `production-signing` environment. Go to **Actions → the running "Build
-   container image" run → Review deployments → Approve**. That one click signs
-   and ships `:latest`. (Skip it and last week's image stays live — also safe.)
+4. **Approve the publish.** The Monday run (10:05 UTC) builds, CVE-scans and
+   stages the image first, *then* pauses at the `production-signing`
+   environment — so by the time you're asked, the build and scan are already
+   green and approving means "promote exactly that digest". Go to **Actions →
+   the running "Build container image" run → Review deployments → Approve**.
+   That one click signs and ships `:latest`. (Skip it and last week's image
+   stays live — also safe. If the build job is red, there is nothing to
+   approve — fix main instead.)
 5. **Done.** Optionally confirm what shipped
    ([Reference §4](#4-after-a-publish--verify-what-shipped)).
 
@@ -61,8 +65,9 @@ A critical CVE in a layered package, or a kernel fix you need out *today* rather
 than next Monday:
 
 - **Actions → "Build container image" → Run workflow → Branch: `main` → Run.**
-  This is a manual publish: it rebuilds, pauses at `production-signing` for your
-  approval, then ships. Same single approval click as Monday, just on demand.
+  This is a manual publish: it builds, scans and stages, then pauses at
+  `production-signing` for your approval, then ships. Same single approval
+  click as Monday, just on demand.
   This is the *only* way to publish off-schedule, and that's deliberate.
 
 If the urgent fix is a `security`-labelled Renovate PR, **merge it first, then
@@ -163,8 +168,10 @@ These make the automation work; listed so they survive a settings audit:
 - **Allow auto-merge** (Settings → General) — on.
 - **Dependabot alerts** (Settings → Code security) — on (feeds Renovate's
   vulnerability alerts; this is the *alerts* feature, not version updates).
-- **Branch protection** on `main` requiring the "Build and push image" check —
-  on (`strict=false`, admins may override, no required reviews). This is what
+- **Branch protection** on `main` requiring the "Build and scan image" check —
+  on (`strict=false`, admins may override, no required reviews). The required
+  check name is the build job's `name:` in `build.yml` — rename them together
+  or PRs can never merge. This is what
   makes "merge only when green" enforced for *every* path; without it,
   `gh pr merge --auto` merges immediately and only Renovate self-gates on CI.
 - **`production-signing` environment** with you as a required reviewer — on.

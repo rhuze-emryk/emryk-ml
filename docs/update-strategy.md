@@ -80,16 +80,20 @@ Fedora ships fix
   → green → Renovate AUTO-MERGES to main (SECURITY-TODO #31) ← hands-off
   → change waits on main until the weekly Monday build —
     or a manual "Run workflow" if the fix is urgent
-  → that build pauses at the production-signing
-    environment (PR #41)                                    ← maintainer approves
-  → our build publishes :latest
+  → that run builds, CVE-scans, and stages the image, THEN
+    pauses at the production-signing environment (PR #41)   ← maintainer approves
+    (the approval is informed: build + scan are already green,
+     and approving promotes exactly that staged digest)
+  → the publish job promotes the staged digest to :latest
   → customer bootc timer fetches + stages (~8h)
   → customer REBOOTS                                        ← manual, by design
 ```
 
 The slow links are deliberate. There is no human gate on the *merge* — review
 moved out of the hot path — but two manual gates remain: the maintainer's
-one-click `production-signing` approval before anything reaches the registry,
+one-click `production-signing` approval before anything *signed* reaches the
+registry (the build job stages an unsigned `:staging` reference first, which
+customer machines cannot pull — their policy requires our cosign signature),
 and the customer's reboot, which is their call so training jobs survive.
 Publishing is **weekly** (the Monday build), which batches the maintainer's
 approvals into one predictable moment instead of one per merge; an urgent fix

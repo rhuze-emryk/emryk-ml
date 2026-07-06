@@ -6,10 +6,10 @@ on:
       - main
   schedule:
     # Weekly, not nightly — and this scheduled run is the ONLY routine publish.
-    # Pushes to main build-and-test but do NOT publish (see the publish-step
-    # `if:` guards below): the registry moves only on this Monday cron or a
-    # manual workflow_dispatch. That gives the maintainer one predictable
-    # approval per week instead of one per merge.
+    # Pushes to main build-and-test but do NOT publish (the sign-and-publish
+    # job below only runs on the publishing paths): the registry moves only on
+    # this Monday cron or a manual workflow_dispatch. That gives the maintainer
+    # one predictable approval per week instead of one per merge.
     #
     # The base is digest-pinned, so a scheduled rebuild only refreshes the ~20
     # dnf-layered packages — kernel/userland/driver arrive via Renovate digest
@@ -58,35 +58,39 @@ env:
 concurrency:
   # Suffix the group with whether this run publishes (schedule/dispatch) so
   # publishing runs and non-publishing build runs never share a group. Without
-  # this, a push to main during the weekly publish — or while it waits at the
-  # production-signing approval gate — would land in the same group and CANCEL
-  # the publish (cancel-in-progress), so the week's release could silently
-  # vanish just as you go to approve it. PR runs stay isolated by their own ref.
+  # this, a push to main during the weekly publish — or while its publish job
+  # waits at the production-signing approval gate — would land in the same
+  # group and CANCEL the publish (cancel-in-progress), so the week's release
+  # could silently vanish just as you go to approve it. PR runs stay isolated
+  # by their own ref.
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
+# Two jobs, split so the production-signing approval is INFORMED. Before the
+# split, the environment gate sat on the single build job, which paused the
+# run before step one: the maintainer approved a publish having seen no build,
+# no scan — nothing (on 2026-07-06 an approval given sight-unseen was followed
+# 4 minutes later by a mesa-skew build failure that had been knowable since
+# 10:05). Now build_scan runs ungated to a green build + CVE scan and stages
+# the image; the publish job carries the environment gate, so approving means
+# "promote this exact, already-scanned digest".
 jobs:
-  build_push:
-    name: Build and push image
+  build_scan:
+    # This job name is the required status check in branch protection
+    # (UPDATING.md §6) — rename them together or PRs can never merge.
+    name: Build and scan image
     runs-on: ubuntu-24.04
-
-    # Gate SIGNING_SECRET behind the `production-signing` environment
-    # (required-reviewer approval, restricted to main) — KEY-POLICY.md
-    # "GitHub Environment runbook". Resolves to the environment ONLY for the
-    # publishing paths (the Monday schedule + manual workflow_dispatch on main);
-    # on pull_request AND on ordinary pushes to main it is empty, so neither PR
-    # builds nor post-merge validation builds are gated. That is the whole point
-    # of the weekly cadence: the approval prompt fires once a week on the
-    # publish, not once per merge. The signing step reads SIGNING_SECRET, which
-    # is environment-scoped once moved there.
-    environment: ${{ ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) && 'production-signing' || '' }}
 
     permissions:
       contents: read
+      # Staging push on the publishing paths only; PR and push-to-main runs
+      # never login (see the step `if:` guards below).
       packages: write
-      id-token: write
-      # SECURITY-TODO #8: needed for SLSA provenance + SBOM attestations.
-      attestations: write
+
+    outputs:
+      publish: ${{ steps.pub.outputs.publish }}
+      digest: ${{ steps.staging.outputs.digest }}
+      tags: ${{ steps.metadata.outputs.tags }}
 
     steps:
       - name: Prepare environment
@@ -95,13 +99,24 @@ jobs:
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
           echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
+      # Single source of truth for "does this run publish?": the Monday
+      # schedule and manual workflow_dispatch on the default branch only.
+      # Pull requests and ordinary pushes to main build-and-test but never
+      # publish, so a merge never moves the registry on its own — the weekly
+      # run (or an explicit "Run workflow") does. The ref check stops a
+      # dispatch on a non-default branch from publishing.
+      - name: Determine publish path
+        id: pub
+        run: |
+          echo "publish=${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}" >> "$GITHUB_OUTPUT"
+
       # These stage versions are pinned by https://github.com/renovatebot/renovate
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       # Skip the ~8-minute image build on PRs that only touch docs / CI-config —
       # none of the files matched below can change the built image. The job
-      # itself still runs and reports the required "Build and push image" check
+      # itself still runs and reports the required "Build and scan image" check
       # (green), so branch protection + Renovate auto-merge keep working; only
       # the heavy steps are skipped. Fail-open: any path NOT listed forces a
       # full build. Pushes to main, schedules and manual runs always build;
@@ -284,7 +299,8 @@ jobs:
           syft version
 
       # SECURITY-TODO #8: CycloneDX SBOM, generated from the extracted RPM
-      # database directory. attest-sbom below binds this to the pushed digest.
+      # database directory. attest-sbom in the publish job binds this to the
+      # pushed digest.
       - name: Generate SBOM (CycloneDX)
         if: steps.changes.outputs.build == 'true'
         run: |
@@ -312,7 +328,7 @@ jobs:
 
       # SECURITY-TODO #3 + #20: CVE scan via the SBOM (no image re-catalog).
       # Policy (SECURITY.md): critical-severity findings BLOCK the build (and so
-      # the publish, since the push/sign/attest steps come after this one);
+      # the publish, since the sign-and-publish job `needs:` this one);
       # high/medium/low are reported in the job summary. Accepted findings — e.g.
       # a fix already available upstream that the digest-pinned base hasn't
       # picked up yet — are waived in `.grype.yaml` (auto-loaded from the repo
@@ -337,69 +353,107 @@ jobs:
           fi
           exit "$rc"
 
-      # Rechunk is a script that we use on Universal Blue to make sure there isnt a single huge layer when your image gets published.
-      # This does not make your image faster to download, just provides better resumability and fixes a few errors.
-      # Documentation for Rechunk is provided on their github repository at https://github.com/hhd-dev/rechunk
-      # You can enable it by uncommenting the following lines:
-      # - name: Run Rechunker
-      #   id: rechunk
-      #   uses: ublue-os/legacy-rechunk@a925083d9af7cb04b3e2a6e8c01bfa495f38b710 # v1.0.0
-      #   with:
-      #     rechunk: 'ghcr.io/ublue-os/legacy-rechunk:v1.0.0-x86_64'
-      #     ref: "localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-      #     prev-ref: "${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-      #     skip_compression: true
-      #     version: ${{ env.CENTOS_VERSION }}
-      #     labels: ${{ steps.metadata.outputs.labels }} # Rechunk strips out all the labels during build, this needs to be reapplied here with newline separator
+      # Hand the SBOM to the publish job so the attestation binds the exact
+      # bytes that were scanned above — no regeneration across the gate.
+      - name: Upload SBOM for the publish job
+        if: steps.pub.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          retention-days: 7
 
-      # This is necessary so that the podman socket can find the rechunked image on its storage
-      # - name: Load in podman and tag
-      #   run: |
-      #     IMAGE=$(podman pull ${{ steps.rechunk.outputs.ref }})
-      #     sudo rm -rf ${{ steps.rechunk.outputs.output }}
-      #     for tag in ${{ steps.metadata.outputs.tags }}; do
-      #       podman tag $IMAGE ${{ env.IMAGE_NAME }}:$tag
-      #     done
-
-      # These `if` guards keep the publish path (login -> push -> sign ->
-      # attest) to the Monday schedule and manual workflow_dispatch on main
-      # only. Pull requests and ordinary pushes to main build-and-test but never
-      # publish, so a merge never moves the registry on its own — the weekly run
-      # (or an explicit "Run workflow") does. The ref check stops a dispatch on
-      # a non-default branch from publishing.
       - name: Login to GitHub Container Registry
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: steps.pub.outputs.publish == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Inline replacement for redhat-actions/push-to-registry (deprecated on
-      # Node 20 and effectively unmaintained — no Node 24 update). buildah
-      # picks up the registry credentials from docker/login-action above.
-      # All tags point at the same content, so the manifest digest is
-      # identical across them — capture it once via --digestfile.
-      - name: Push To GHCR
-        id: push
-        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      # Stage the image at :staging BEFORE the approval gate so the publish
+      # job can promote it by digest without rebuilding (a same-repo tag copy
+      # is a manifest-only operation; the ~12GB of blobs upload once, here).
+      # :staging is deliberately unsigned and may briefly lead :latest — or
+      # outlive a rejected publish. That is safe by design: customer machines
+      # enforce cosign signatures for this whole namespace (containers-
+      # policy.json, SECURITY-TODO #2), so an unsigned :staging cannot be
+      # pulled by them, and because cosign signatures attach to the DIGEST,
+      # the moment the publish job signs, the same manifest at :staging is
+      # covered too. Inline buildah push (not redhat-actions/push-to-registry,
+      # deprecated on Node 20 with no Node 24 update); credentials come from
+      # docker/login-action above.
+      - name: Push staging image
+        id: staging
+        if: steps.pub.outputs.publish == 'true'
         run: |
-          IMAGE_FULL="${IMAGE_REGISTRY}/${IMAGE_NAME}"
-          digest=""
-          for tag in ${{ steps.metadata.outputs.tags }}; do
-            if [ -z "$digest" ]; then
-              buildah push --digestfile=./push-digest.txt \
-                "localhost/${IMAGE_NAME}:${tag}" \
-                "docker://${IMAGE_FULL}:${tag}"
-              digest=$(cat ./push-digest.txt)
-            else
-              buildah push \
-                "localhost/${IMAGE_NAME}:${tag}" \
-                "docker://${IMAGE_FULL}:${tag}"
-            fi
-          done
+          buildah push --digestfile=./staging-digest.txt \
+            "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
+            "docker://${IMAGE_REGISTRY}/${IMAGE_NAME}:staging"
+          digest=$(cat ./staging-digest.txt)
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
-          echo "Pushed ${IMAGE_FULL} @ ${digest}"
+          echo "Staged ${IMAGE_REGISTRY}/${IMAGE_NAME}@${digest}"
+
+  # The publish path: promote -> sign -> attest, behind the production-signing
+  # approval gate (required-reviewer, restricted to main) — KEY-POLICY.md
+  # "GitHub Environment runbook". Because this job `needs:` build_scan, the
+  # approval prompt only appears AFTER the build, the kernel-coupling check
+  # and the grype CVE gate are all green: approving promotes the exact staged
+  # digest shown in the build_scan log, nothing else. SIGNING_SECRET is
+  # environment-scoped, so no other job can read it. The weekly cadence keeps
+  # this to one approval per week (plus any deliberate workflow_dispatch).
+  publish:
+    name: Sign and publish image
+    runs-on: ubuntu-24.04
+    needs: build_scan
+    if: needs.build_scan.outputs.publish == 'true'
+    environment: production-signing
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      # SECURITY-TODO #8: needed for SLSA provenance + SBOM attestations.
+      attestations: write
+
+    env:
+      DIGEST: ${{ needs.build_scan.outputs.digest }}
+      TAGS: ${{ needs.build_scan.outputs.tags }}
+
+    steps:
+      - name: Prepare environment
+        run: |
+          # Lowercase the image uri (same normalisation as build_scan)
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Manifest-only, same-repo copies: the registry already holds the blobs
+      # from the staging push, so promoting to all release tags takes seconds.
+      # --preserve-digests makes skopeo fail loudly rather than ever rewrite
+      # the manifest — the digest the maintainer approved is the digest that
+      # ships, byte-identical. skopeo is preinstalled on ubuntu-24.04 runners
+      # and reads the docker/login-action credentials.
+      - name: Promote staged digest to release tags
+        run: |
+          set -euo pipefail
+          if [ -z "${DIGEST}" ]; then
+            echo "::error::No staged digest handed over from build_scan — refusing to publish."
+            exit 1
+          fi
+          IMAGE_FULL="${IMAGE_REGISTRY}/${IMAGE_NAME}"
+          for tag in ${TAGS}; do
+            skopeo copy --preserve-digests \
+              "docker://${IMAGE_FULL}@${DIGEST}" \
+              "docker://${IMAGE_FULL}:${tag}"
+            echo "Promoted ${IMAGE_FULL}@${DIGEST} -> :${tag}"
+          done
 
       # This section is optional and only needs to be enabled if you plan on distributing
       # your project for others to consume. You will need to create a public and private key
@@ -407,23 +461,25 @@ jobs:
       # to consume. For more details, review the image signing section of the README.
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         with:
           cosign-release: 'v2.6.1'
 
       # Cosign signatures attach to the manifest *digest*, and every tag we
-      # push points at the same manifest (see Push To GHCR), so one
-      # digest-addressed signature covers all tags. Signing by digest also
-      # avoids re-resolving each tag at sign time, which could race a
-      # concurrent push moving a tag between our push and sign steps.
+      # promote points at the same manifest, so one digest-addressed signature
+      # covers all tags (:staging included). Signing by digest also avoids
+      # re-resolving each tag at sign time, which could race a concurrent push
+      # moving a tag between our promote and sign steps.
       - name: Sign container image
-        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: |
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
         env:
-          DIGEST: ${{ steps.push.outputs.digest }}
           COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+
+      - name: Download SBOM from build_scan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
 
       # SECURITY-TODO #8: SLSA build provenance + CycloneDX SBOM attestations.
       # Both signed via Sigstore using the workflow's short-lived OIDC token
@@ -431,18 +487,16 @@ jobs:
       # verify with `gh attestation verify` against the published artifact
       # alone — no GitHub API trust needed beyond the registry.
       - name: Attest build provenance
-        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
+          subject-digest: ${{ needs.build_scan.outputs.digest }}
           push-to-registry: true
 
       - name: Attest SBOM
-        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-name: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
+          subject-digest: ${{ needs.build_scan.outputs.digest }}
           sbom-path: sbom.cdx.json
           push-to-registry: true
