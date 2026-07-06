@@ -7,9 +7,9 @@ COPY cosign.pub /cosign.pub
 # Base images are pinned by digest so an upstream tag rewrite cannot silently
 # change what we build. The tag is kept for readability; the digest is what
 # the runtime verifies. Bump both together when intentionally rolling forward.
-FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.0.12-201.fc44.x86_64@sha256:6cc854bed43eb6eedac000a2978eb97337cd371af0d3e66a9b8f000186b18d29 AS nvidia
+FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.0.14-201.fc44.x86_64@sha256:0973a0fde052c5376721a697c0739b35fe202f2b6aae6535bacd29aada9f2682 AS nvidia
 
-FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:3b80c7a9a1894e4e7503b19860ee87dafcb86f4644108688ca418c195a52f554
+FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:505caaae0901b97b37db2325c25a0946cfe2be59bda5c33980b2c1e3c92718fb
 
 # nvidia-install.sh: installs kmod + full driver stack, sets up repos, fixes dracut for
 # forced driver load (prevents black screen on boot), installs SELinux policy for
