@@ -9,7 +9,7 @@ name: Monday cockpit
 
 on:
   schedule:
-    # Monday 13:30 UTC — after Renovate (<=09:00), the weekly build (10:05) and
+    # Monday 13:30 UTC — after Renovate (weekend + Monday <=09:00), the weekly build (10:05) and
     # vendor-drift-watch (13:00), so the digest reflects all of them. ~09:30 EDT.
     - cron: '30 13 * * MON'
   workflow_dispatch:
@@ -62,6 +62,33 @@ jobs:
           drift=$(gh issue list --state open --search 'in:title "drifted from upstream"' \
             --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || true)
 
+          # --- automation liveness (absence detection) ---------------------------
+          # A dead Renovate looks like a CLEAN cockpit: no PRs, nothing red,
+          # "0 auto-merge PRs" reads as calm instead of as an outage. That is
+          # exactly how the 2026-07-06 publish failure happened — the bot had
+          # been silent since ~June 11, the base pin went stale, and the Monday
+          # build died on mesa multilib skew. Two cheap absence signals:
+          # the age of the base digest pin (Renovate should refresh it weekly)
+          # and the age of Renovate's own Dependency Dashboard edits.
+          now_s=$(date -u +%s)
+          stale=""
+          pin_date=$(gh api "repos/$GH_REPO/commits?path=Containerfile&per_page=1" \
+            --jq '.[0].commit.committer.date' 2>/dev/null || echo '')
+          if [ -n "$pin_date" ]; then
+            pin_age=$(( (now_s - $(date -u -d "$pin_date" +%s)) / 86400 ))
+            if [ "$pin_age" -gt 10 ]; then
+              stale="${stale}- ⚠️ The base digest pin is **${pin_age} days old** (Containerfile last touched ${pin_date%%T*}). Renovate normally refreshes it weekly — a stale base eventually fails the build on multilib skew.\n"
+            fi
+          fi
+          dash_date=$(gh issue list --state open --search 'in:title "Dependency Dashboard"' \
+            --json updatedAt --jq '.[0].updatedAt // ""' 2>/dev/null || echo '')
+          if [ -n "$dash_date" ]; then
+            dash_age=$(( (now_s - $(date -u -d "$dash_date" +%s)) / 86400 ))
+            if [ "$dash_age" -gt 8 ]; then
+              stale="${stale}- ⚠️ Renovate has not touched its [Dependency Dashboard](/${GH_REPO}/issues) in **${dash_age} days** — the bot may have stopped running. Check https://developer.mend.io/github/${GH_REPO}.\n"
+            fi
+          fi
+
           # --- this week's scheduled publish run ---------------------------------
           run=$(gh run list --workflow build.yml --event schedule --limit 1 \
             --json status,conclusion,url --jq '.[0]' 2>/dev/null || echo '')
@@ -94,6 +121,11 @@ jobs:
             printf '## 🗓️ Monday cockpit — %s\n\n' "$today"
             echo 'Top to bottom. Doing nothing is safe — last week'\''s signed image stays live.'
             echo
+            if [ -n "$stale" ]; then
+              echo '**0 · 🚨 Automation health — something that should have happened, did not**'
+              echo
+              printf '%b\n' "$stale"
+            fi
             echo '**1 · Approve this week'\''s publish**'
             echo
             printf '%s\n\n' "$publish"

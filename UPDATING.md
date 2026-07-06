@@ -128,8 +128,11 @@ registry moves only on the Monday build or a manual `workflow_dispatch`.
   the ~20 layered `dnf` packages) and, after your approval, signs and ships
   everything merged to `main` since last week.
 
-Renovate runs on a **weekly schedule** — before 09:00 UTC Mondays, just ahead of
-the 10:05 build cron — and *version* updates additionally wait out a 3-day
+Renovate runs on a **weekly schedule** — over the weekend plus Monday before
+09:00 UTC, so digest bumps are merged well before the 10:05 build cron. (The
+window was originally Monday-morning-only; the hosted bot's visit cadence can
+miss a 9-hour window entirely, which silently starved the repo of digest bumps
+for weeks — see the 2026-07-06 publish failure.) *Version* updates additionally wait out a 3-day
 cool-down so yanked or broken upstream releases never reach a PR (PR #37).
 Security/vulnerability PRs bypass both and open at any time (but still don't ship
 until a build runs). To force a Renovate run mid-week (e.g. to pick up a fresh
