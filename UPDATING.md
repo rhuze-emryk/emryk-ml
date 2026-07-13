@@ -155,6 +155,20 @@ gh attestation verify oci://ghcr.io/rhuze-emryk/emryk-ml:latest \
   --repo rhuze-emryk/emryk-ml
 ```
 
+> **Cosign v3 gotcha (2026-07-13):** run the `cosign verify` above with cosign
+> **v2.x** (`cosign version` to check). A v3 client fails with
+> `no matching attestations: expected key signature, not certificate` even
+> when the image is correctly signed: CI signs key-based with cosign v2.6.1
+> (legacy `.sig` tag), but v3's verifier discovers the keyless SLSA/SBOM
+> attestation referrers first and rejects those instead. The keyless referrers
+> are correct — they come from `actions/attest*` by design. Customer machines
+> are unaffected either way: podman's `policy.json` check reads the legacy
+> `.sig` path only. Decisive manual check if in doubt: the
+> `:sha256-<digest>.sig` tag's manifest layer must carry NO
+> `dev.sigstore.cosign/certificate` annotation (key-signed, not keyless), and
+> its signature annotation must `openssl dgst -sha256 -verify cosign.pub`
+> against the payload blob.
+
 See README **Verifying the image** for the full set (incl. SBOM).
 
 ### 5. If a published update misbehaves
