@@ -7,7 +7,7 @@ COPY cosign.pub /cosign.pub
 # Base images are pinned by digest so an upstream tag rewrite cannot silently
 # change what we build. The tag is kept for readability; the digest is what
 # the runtime verifies. Bump both together when intentionally rolling forward.
-FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.0.14-201.fc44.x86_64@sha256:0973a0fde052c5376721a697c0739b35fe202f2b6aae6535bacd29aada9f2682 AS nvidia
+FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.0.14-201.fc44.x86_64@sha256:b523ce150646722ab57aecdb54269451397ad03362d16fa3a483e49637da4331 AS nvidia
 
 FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:45317205f878927335aebe28ef8304e633cda95d4be4e1ff594558a80c5f2cba
 
