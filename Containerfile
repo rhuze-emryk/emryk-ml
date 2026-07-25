@@ -9,7 +9,7 @@ COPY cosign.pub /cosign.pub
 # the runtime verifies. Bump both together when intentionally rolling forward.
 FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.0.14-201.fc44.x86_64@sha256:b523ce150646722ab57aecdb54269451397ad03362d16fa3a483e49637da4331 AS nvidia
 
-FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:57a4fb4978923f14f272e61354ee77f4f13362ef210d494683335bec1b746e64
+FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:7bb15616bf3db5a1c3a358d0ded42e0f81e8cd7c9ea7aebf33b6309f15139336
 
 # nvidia-install.sh: installs kmod + full driver stack, sets up repos, fixes dracut for
 # forced driver load (prevents black screen on boot), installs SELinux policy for
