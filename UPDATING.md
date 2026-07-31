@@ -185,9 +185,10 @@ These make the automation work; listed so they survive a settings audit:
 - **Allow auto-merge** (Settings → General) — on.
 - **Dependabot alerts** (Settings → Code security) — on (feeds Renovate's
   vulnerability alerts; this is the *alerts* feature, not version updates).
-- **Branch protection** on `main` requiring the "Build and scan image" check —
+- **Branch protection** on `main` requiring the "Build and scan image (nvidia)"
+  and "Build and scan image (intel)" checks (one per build matrix leg) —
   on (`strict=false`, admins may override, no required reviews). The required
-  check name is the build job's `name:` in `build.yml` — rename them together
+  check names are the build job's `name:` in `build.yml` — rename them together
   or PRs can never merge. This is what
   makes "merge only when green" enforced for *every* path; without it,
   `gh pr merge --auto` merges immediately and only Renovate self-gates on CI.
