@@ -45,6 +45,8 @@ grep -Fq 'COSIGN_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}' "$build_workflow"
 grep -Fq "ssh-keygen -q -t ed25519 -N ''" "$build_workflow"
 grep -Fq "sshd -T \\" "$build_workflow"
 grep -Fq -- '-h /tmp/emryk-ci-hostkey' "$build_workflow"
+# shellcheck disable=SC2016
+[[ $(grep -Fc 'modinfo -k "$image_kver" nvidia' "$build_workflow") -eq 2 ]]
 
 sign_line=$(grep -n -- '- name: Sign immutable staged digest' "$build_workflow" | cut -d: -f1)
 verify_line=$(grep -n -- '- name: Verify signature with expected active key' "$build_workflow" | cut -d: -f1)

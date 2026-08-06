@@ -306,11 +306,20 @@ jobs:
             /etc/systemd/system/emryk-update-nudge.service \
             /etc/systemd/system/emryk-update-nudge.timer
 
+          # A Buildah container shares the Ubuntu runner's running kernel.
+          # Query the Fedora kernel installed in the image and direct modinfo
+          # to that module tree instead of implicitly using `uname -r`.
+          image_kver=$(buildah run "$container" -- rpm -q \
+            --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-core \
+            | tail -1)
+          [[ -n $image_kver ]]
+
           if [[ $VARIANT == nvidia ]]; then
             buildah run "$container" -- test -f \
               /usr/lib/modprobe.d/blacklist-nouveau.conf
             buildah run "$container" -- rpm -q nvidia-container-toolkit
-            buildah run "$container" -- modinfo nvidia >/dev/null
+            buildah run "$container" -- modinfo -k "$image_kver" nvidia \
+              >/dev/null
           else
             if buildah run "$container" -- test -e \
               /usr/lib/modprobe.d/blacklist-nouveau.conf; then
@@ -321,7 +330,8 @@ jobs:
               echo '::error::Intel image contains NVIDIA Container Toolkit.'
               exit 1
             fi
-            if buildah run "$container" -- modinfo nvidia >/dev/null 2>&1; then
+            if buildah run "$container" -- modinfo -k "$image_kver" nvidia \
+              >/dev/null 2>&1; then
               echo '::error::Intel image contains NVIDIA module metadata.'
               exit 1
             fi
