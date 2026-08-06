@@ -1,266 +1,156 @@
 # Emryk ML
 
-[![Build Status](https://github.com/rhuze-emryk/emryk-ml/actions/workflows/build.yml/badge.svg)](https://github.com/rhuze-emryk/emryk-ml/actions/workflows/build.yml)
+[![Build status](https://github.com/rhuze-emryk/emryk-ml/actions/workflows/build.yml/badge.svg)](https://github.com/rhuze-emryk/emryk-ml/actions/workflows/build.yml)
 
-A managed [bootc](https://github.com/bootc-dev/bootc) image for cloud ML workstations. Built on [Universal Blue's](https://universal-blue.org/) `kinoite-main` (Fedora Kinoite + UBlue fixes), it wires NVIDIA open kernel modules all the way through to **rootless containers**: your GPU is available inside Podman and distrobox out of the box — no `--privileged`, no root daemon, no manual CDI setup. KDE Plasma and a container-first dev toolchain round it out.
+Emryk ML is a managed Fedora Kinoite [bootc](https://github.com/bootc-dev/bootc)
+image for ML workstations. It publishes two AMD64 variants each Monday, or on
+an explicitly approved manual release:
 
-This is the public image foundation for the [Emryk Workstation](https://emryk.com) product. It publishes to `ghcr.io/rhuze-emryk/emryk-ml` weekly (the Monday build), or on demand via **Run workflow**; every push to `main` is built and tested but does not move the registry.
-
-A second variant, `ghcr.io/rhuze-emryk/emryk-ml-intel`, carries the same payload and hardening **without the NVIDIA driver stack** — for Intel iGPU laptops and workstations (mesa covers the GPU; no out-of-tree kernel modules, so Secure Boot works with no key enrollment). Both variants build from the same Containerfile (named stages `nvidia` and `intel`) and publish together on the same weekly cadence.
-
-## What's included
-
-**Base:** `ghcr.io/ublue-os/kinoite-main:latest` — stock Fedora Kinoite with UBlue's RPMFusion, hardware quirk fixes, and `bootc` integration.
-
-**NVIDIA:** Open kernel modules via `ghcr.io/ublue-os/akmods-nvidia-open:latest`, installed in a multi-stage build so the pre-built modules match the base image's kernel exactly. The **NVIDIA Container Toolkit** is installed by the same akmods setup, and `ublue-nvctk-cdi.service` regenerates the CDI spec (`/etc/cdi/nvidia.yaml`) at every boot so the GPU stays exposed to rootless containers across base-image rebases — see [GPU in containers](#gpu-in-containers) below.
-
-**Packages installed on top of the base:**
-
-| Package | Purpose |
-|---|---|
-| `tailscale` | Team VPN |
-| `wireguard-tools` | WireGuard primitives |
-| `cockpit` | Remote browser-based management |
-| `distrobox` | Per-project containers on top of the immutable base |
-| `podman-compose` / `podman-docker` | Container workflows; Docker socket compatibility via Podman |
-| `neovim` / `vim-enhanced` | Editors |
-| `btop` / `htop` | System monitoring |
-| `kde-gtk-config` | GTK app theming integration for KDE |
-| `gh` | GitHub CLI |
-| `git` / `curl` / `wget` | Standard tooling |
-
-**Systemd services enabled:** `tailscaled`, `cockpit.socket`, `bootc-fetch-apply-updates.timer`, `ublue-nvctk-cdi.service` (regenerates the GPU CDI spec each boot), `flatpak-system-update.timer` (daily Flatpak updates), `emryk-update-nudge.timer` (staged-update login banner), and `emryk-install-flatpaks.service` (first-boot Firefox install). The **rootless** per-user `podman.socket` is enabled globally (every user gets `/run/user/$UID/podman/podman.sock` automatically); the rootful system `podman.socket` is deliberately disabled — see "Containers" below.
-
-**Flatpaks:** Firefox is installed from Flathub at first boot via a oneshot systemd service (`emryk-install-flatpaks.service`). Network is required on first boot for this step. `flatpak-system-update.timer` then keeps system Flatpaks current daily.
-
-**NVIDIA modprobe config:** nouveau blacklisted; `nvidia-drm modeset=1` set; open module enabled for unsupported GPUs.
-
-## Using the image
-
-From any bootc system:
-
-```bash
-sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml:latest        # NVIDIA workstation
-sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml-intel:latest  # Intel iGPU laptop
-```
-
-Reboot to apply.
-
-### One tag per variant
-
-Each variant ships a single moving tag — `:latest`. Roll forward with `bootc upgrade`; roll back to the previous deployment with `sudo bootc rollback`. `/var` and `/home` are preserved across deployments.
-
-### Optional recipes
-
-The base is **NVIDIA-targeted today** — the GPU stack (open kernel modules, `nvidia-container-toolkit`, CDI generation, nouveau blacklist) is baked in. Beyond that it's kept minimal, with one further deliberate vendor commitment — Tailscale, the management plane (see "Remote management" below for why, and for the self-hosted escape hatch). Other capabilities are documented as opt-in recipes rather than baked in:
-
-- **Private egress (VPN).** Route traffic through a Mullvad exit node via the Tailscale already in the image — privacy without embedding another vendor. See [`docs/recipes/private-egress.md`](./docs/recipes/private-egress.md).
-- **Unsloth Studio (rootless).** See [`docs/recipes/unsloth-studio.md`](./docs/recipes/unsloth-studio.md).
-
-### Deprecated: `:latest-private-ml`
-
-Earlier releases published a `:latest-private-ml` variant (base + the Mullvad VPN daemon preconfigured). It is **no longer built** — baking a single commercial VPN vendor into every image worked against the project's no-lock-in principle. Existing `:latest-private-ml.*` tags remain in the registry but get no new builds or security updates. Move to `:latest` with `sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml:latest`, and use the private-egress recipe above if you want Mullvad.
-
-## Remote management
-
-Cockpit (browser-based system management) is installed and enabled on every build, but is **only reachable over Tailscale** — never over the LAN or the open internet.
-
-**Tailscale is the one vendor this image commits to.** Its client is baked in, `tailscaled` is enabled by default, and the whole management perimeter is built around the tailnet. That's a deliberate trade — a managed cloud workstation needs a management plane, and this is the best one available — but it is a real dependency on a commercial service, and we'd rather say so than claim total neutrality. The escape hatch: `tailscaled` also works against [Headscale](https://github.com/juanfont/headscale), a self-hosted open-source control server (`sudo tailscale up --login-server https://<your-headscale>`), so the coordination layer can be taken off Tailscale's SaaS without changing the image. Features that live in Tailscale's commercial control plane — notably the Mullvad exit nodes used by the [private-egress recipe](./docs/recipes/private-egress.md) — are not available via Headscale.
-
-Mechanism — the image declares its perimeter explicitly:
-
-| Interface | Zone | What's reachable |
+| Image | Intended hardware | Variant-specific payload |
 |---|---|---|
-| ethernet / wifi (untrusted) | `public` (default) | `dhcpv6-client` only. SSH, Cockpit, mDNS, Samba, and all high ports are closed — the entire management plane lives on the tailnet. |
-| `tailscale0` (your trust boundary) | `tailscale` (`target=ACCEPT`) | Everything. Full operator access — SSH (key-only, no password, no root — see SSH hardening below), Cockpit, ad-hoc HTTP servers, anything you bind. |
-| `lo` (loopback) | unfiltered | Local apps unaffected. |
+| `ghcr.io/rhuze-emryk/emryk-ml` | NVIDIA workstation | NVIDIA open kernel modules, container toolkit, boot-time CDI generation, and a nouveau blacklist |
+| `ghcr.io/rhuze-emryk/emryk-ml-intel` | Intel iGPU workstation or laptop | Mesa/base graphics only; no NVIDIA packages, module metadata, toolkit, CDI unit, or nouveau blacklist |
 
-The default zone is **`public`**, not Fedora's stock `FedoraWorkstation` — the latter is permissive for desktop use and allows TCP/UDP 1025–65535 wide open, which is inappropriate for a workstation that may sit on a hostile LAN or a public IP.
+Both variants include KDE Plasma, Tailscale, Cockpit, Podman, Distrobox, common
+developer tools, signature policy, SELinux configuration, and the same update
+behavior. The published image names and moving `:latest` tags are stable.
 
-Access it at:
+## Install or switch
 
-```
-https://<host>.<tailnet-name>.ts.net:9090
-```
-
-or via the host's tailnet IP (`https://100.x.y.z:9090`). If you ever need Cockpit reachable somewhere other than the tailnet, you'll have to explicitly add the `cockpit` service to another firewalld zone — and please reconsider whether you actually want that.
-
-## Updates
-
-`bootc-fetch-apply-updates.timer` is enabled on every build, and runs roughly every 8 hours (with 2h randomised jitter). It **fetches and stages** updates from the registry but **does not reboot** — a customer training job can run for days, and a surprise unattended reboot would vaporise it.
-
-When an update has been staged, a banner at your next login reminds you to reboot (and flags it if a new kernel is included). The change takes effect on the next reboot. To check what's queued:
+From an AMD64 bootc system, select exactly one variant:
 
 ```bash
-bootc status
+sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml:latest
+sudo systemctl reboot
 ```
-
-To force-apply staged updates right now: `sudo systemctl reboot`. To roll back to the previous deployment if the new one misbehaves: `sudo bootc rollback && sudo systemctl reboot`. To opt out of auto-fetching entirely:
 
 ```bash
-sudo systemctl disable --now bootc-fetch-apply-updates.timer
+sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml-intel:latest
+sudo systemctl reboot
 ```
 
-_Maintainers:_ how new images are built and published — the upstream flow,
-Renovate auto-merge of green digest bumps, and the kernel↔akmods tag dance — is
-documented in [`UPDATING.md`](UPDATING.md), with the rationale in
-[`docs/update-strategy.md`](docs/update-strategy.md). Every Renovate landing on
-`main` — including the silent auto-merged digest bumps — is logged to the
-[Renovate activity log](https://github.com/rhuze-emryk/emryk-ml/issues/36);
-watch or subscribe to that issue to stay aware of dependency changes.
+`bootc-fetch-apply-updates.timer` periodically fetches and stages a newer
+signed deployment. It does not initiate a reboot. A login message announces a
+staged deployment; the operator chooses when to reboot. `bootc rollback`
+selects the previous deployment while preserving state under `/var` and
+`/home`.
 
-## Containers
+## Runtime behavior
 
-Container workloads run **rootless** by default. The rootless `podman.socket` is enabled globally, so every user automatically gets a Docker-compatible API socket at `/run/user/$UID/podman/podman.sock` — scoped to that user's own privileges, with no path to root. `podman`, `podman-compose`, `distrobox`, and the `docker` CLI (via `podman-docker`) all work out of the box.
+- SSH is explicitly enabled and configured for public-key authentication;
+  root, password, empty-password, and keyboard-interactive SSH login are
+  disabled by the shipped drop-in.
+- Firewalld uses a restrictive `public` zone that declares only
+  `dhcpv6-client`. `tailscale0` is assigned to a separate accepting zone for
+  SSH, Cockpit, and operator-chosen services. Existing network-profile or
+  administrator changes can alter that effective perimeter.
+- The rootless per-user Podman socket is enabled globally. The system rootful
+  socket is not enabled by this image. Rootless containers reduce daemon and
+  socket privilege exposure; they are not a boundary against kernel or
+  container-runtime vulnerabilities.
+- SELinux is configured for enforcing mode and asserted by the release VM.
+  Administrators can still change runtime or persistent policy after install.
+- Firefox is installed from Flathub by an enabled network-dependent first-boot
+  unit. Release VMs validate the unit but mask it for the smoke boot so an
+  external Flathub outage cannot block publication.
+- Cockpit and Tailscale are enabled. Tailscale is a deliberate management-plane
+  dependency; Headscale can provide a self-hosted coordination server.
 
-### GPU in containers
-
-The NVIDIA Container Toolkit is installed, and `ublue-nvctk-cdi.service` writes a fresh [CDI](https://github.com/cncf-tags/container-device-interface) spec to `/etc/cdi/nvidia.yaml` on every boot — so the device names stay in sync with the running driver even after a base-image rebase swaps the kernel and modules. No per-boot `nvidia-ctk` invocation, no `--privileged`, no rootful daemon.
-
-Run a GPU workload rootless with Podman:
+The NVIDIA image regenerates `/etc/cdi/nvidia.yaml` through the upstream
+`ublue-nvctk-cdi.service`. A typical rootless workload is:
 
 ```bash
-podman run --rm --device nvidia.com/gpu=all docker.io/nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+podman run --rm --device nvidia.com/gpu=all \
+  docker.io/nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
 ```
 
-Or spin up a GPU-enabled dev container with distrobox:
+Hosted CI validates module metadata, toolkit presence, and the CDI unit, but
+has no physical GPU. Hardware validation remains a release-assurance gap; see
+[the NVIDIA hardware-canary runbook](docs/hardware-canary.md).
 
-```bash
-distrobox create --name ml --image docker.io/nvidia/cuda:12.4.0-base-ubuntu22.04 --nvidia
-distrobox enter ml
-```
+## Verify published artifacts
 
-`--device nvidia.com/gpu=0` (or any index) passes a single GPU instead of all of them. The CDI spec is regenerated at boot, so if you add or change GPUs you just reboot rather than re-running any setup.
-
-For applications that connect to the Docker socket via the Docker SDK, point them at the rootless socket:
-
-```bash
-export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock
-```
-
-The rootful system socket (`/run/podman/podman.sock`, owned by root) is **deliberately disabled** — it is the classic local-root-escalation primitive (mount `/` into a privileged container, you're root). If a specific workflow truly needs it:
-
-```bash
-sudo systemctl enable --now podman.socket
-```
-
-…and reconsider whether you actually want that. There is almost always a rootless equivalent.
-
-## Verifying the image
-
-Images are signed with [cosign](https://github.com/sigstore/cosign). The public key is `cosign.pub` in this repository.
+The container image signature uses the active Emryk cosign key committed as
+[`cosign.pub`](cosign.pub). These commands are live-tested with the repository's
+pinned cosign v3.0.6 release and force discovery of the legacy key attachment:
 
 ```bash
 cosign verify \
-    --key https://raw.githubusercontent.com/rhuze-emryk/emryk-ml/main/cosign.pub \
-    --new-bundle-format=false \
-    ghcr.io/rhuze-emryk/emryk-ml:latest
+  --key https://raw.githubusercontent.com/rhuze-emryk/emryk-ml/main/cosign.pub \
+  --new-bundle-format=false \
+  ghcr.io/rhuze-emryk/emryk-ml:latest
 ```
-
-> **The `--new-bundle-format=false` flag is needed on cosign v3.** The image is
-> signed with a long-lived key, stored as the legacy `sha256-….sig` attachment.
-> cosign v3 defaults to discovering Sigstore *bundles* via the OCI referrers
-> API, where it instead finds this image's keyless provenance/SBOM attestations
-> and rejects them against `--key` ("expected key signature, not certificate").
-> The flag points cosign at the legacy signature; it is accepted and harmless on
-> cosign v2.x too, so the one command works on both. The `gh attestation` checks
-> below are unaffected — they don't use cosign at all.
-
-**Enforced on installed systems.** Builds containing this policy ship
-`/etc/containers/policy.json` requiring sigstore-signed pulls from
-`ghcr.io/rhuze-emryk/`, verified against the cosign public key installed at
-`/etc/pki/containers/rhuze-emryk.pub`. Once you `bootc switch` to such a build,
-any subsequent pull from this namespace that fails verification is rejected
-before being staged for boot. Other registries (Flathub, Docker Hub, ublue-os)
-continue to use the default accept-anything policy. If a misconfiguration ever
-breaks pulls, `sudo bootc rollback` returns you to the previous deployment,
-which uses the older policy.
-
-### Provenance and SBOM
-
-Every published image also ships two attestations from GitHub Actions, signed via Sigstore (Fulcio + Rekor) with the workflow's short-lived OIDC token — no long-lived secret involved:
-
-1. **SLSA build provenance** — cryptographically proves the image was built from this repo, at a specific commit, by this workflow.
-2. **CycloneDX SBOM** — a complete machine-readable list of every package in the image, generated by [syft](https://github.com/anchore/syft) directly from the published artifact.
-
-Both attestations are pushed to the registry as OCI referrers, so you can verify them with the GitHub CLI without trusting our key:
 
 ```bash
-# Build provenance
-gh attestation verify \
-    oci://ghcr.io/rhuze-emryk/emryk-ml:latest \
-    --repo rhuze-emryk/emryk-ml
-
-# SBOM (CycloneDX)
-gh attestation verify \
-    oci://ghcr.io/rhuze-emryk/emryk-ml:latest \
-    --repo rhuze-emryk/emryk-ml \
-    --predicate-type https://cyclonedx.org/bom
-
-# Download the raw SBOM
-gh attestation download \
-    oci://ghcr.io/rhuze-emryk/emryk-ml:latest \
-    --repo rhuze-emryk/emryk-ml \
-    --predicate-type https://cyclonedx.org/bom
+cosign verify \
+  --key https://raw.githubusercontent.com/rhuze-emryk/emryk-ml/main/cosign.pub \
+  --new-bundle-format=false \
+  ghcr.io/rhuze-emryk/emryk-ml-intel:latest
 ```
 
-These attestations are independent of the cosign signature — three different trust signals that any one of which can be verified without trusting the other two.
+Installed hosts use `/etc/containers/policy.json` to require a matching
+signature for pulls under `ghcr.io/rhuze-emryk`. The recovery signer is not an
+operational host trust root until the offline custodian supplies and commits
+`recovery-cosign.pub`; that bootstrap is tracked as P0 in
+[SECURITY-TODO.md](SECURITY-TODO.md).
 
-Disk-image artifacts produced by `build-disk.yml` (qcow2) also ship SLSA build provenance, signed via the same Sigstore-OIDC path (no long-lived key). If you received a disk image out of band, verify it before booting:
+Each release exposes three complementary, independently inspectable artifacts:
+
+| Artifact | Trust root | Scope |
+|---|---|---|
+| Container signature | Committed Emryk active public key; recovery key after bootstrap | Authorizes a particular OCI manifest digest for the Emryk namespace |
+| Build provenance | GitHub Actions OIDC identity, Fulcio/Rekor, and GitHub attestation verification | Binds the digest to this repository, commit, and workflow invocation |
+| CycloneDX SBOM attestation | Same GitHub Actions OIDC attestation identity | RPM-database inventory plus the explicitly reviewed non-RPM helper exceptions |
+
+Verify provenance or the SBOM for either image by substituting its OCI name:
+
+```bash
+gh attestation verify \
+  oci://ghcr.io/rhuze-emryk/emryk-ml:latest \
+  --repo rhuze-emryk/emryk-ml
+
+gh attestation download \
+  oci://ghcr.io/rhuze-emryk/emryk-ml:latest \
+  --repo rhuze-emryk/emryk-ml \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+The SBOM is intentionally generated from the Fedora RPM database to stay
+within hosted-runner limits. It is not a filesystem inventory. The build fails
+for unowned executable payloads except the two exact reviewed helpers under
+`/usr/libexec/emryk` and documented base/build-system artifacts in the payload
+guard. Configuration files and other non-executable image content are outside
+the RPM inventory; [SECURITY.md](SECURITY.md) defines the resulting assurance.
+
+AMD64 QCOW2 artifacts also receive GitHub build-provenance attestations:
 
 ```bash
 gh attestation verify path/to/disk.qcow2 --owner rhuze-emryk
 ```
 
-Disk images do not currently carry a separate SBOM attestation — their RPM contents are inherited from the already-attested container image used as the bib source.
+## Build and test locally
 
-## Tags
-
-| Tag | Description |
-|---|---|
-| `latest` | Current tested release |
-| `YYYYMMDD` | Date-stamped build |
-| `latest.YYYYMMDD` | Same build, aliased |
-| `latest-private-ml*` | **Deprecated** — no longer built (see "Deprecated: `:latest-private-ml`" above) |
-
-PRs produce a SHA-tagged image that is not pushed to the registry.
-
-## Building locally
-
-Requires [just](https://just.systems) and Podman.
+Supported operations require Podman and [just](https://just.systems):
 
 ```bash
-just build
+just build                  # NVIDIA container
+just build-intel            # Intel container
+just build-qcow2            # AMD64 QCOW2 from a published source
+just rebuild-qcow2 intel    # rootful local Intel rebuild, then QCOW2
+just local-smoke            # repository policy tests
+just check                  # syntax, ShellCheck, policy, and optional installed linters
+just format                 # shfmt + Just formatting
+just clean                  # only QCOW2/BIB generated output
 ```
 
-To build a QCOW2 disk image:
+Only the operations listed above are supported.
 
-```bash
-just build-qcow2
-```
+## Maintainer sources of truth
 
-## Repository layout
-
-```
-Containerfile                       Multi-stage build: akmods-nvidia-open → kinoite-main
-build_files/build.sh                Package installs, repo setup, service config
-.github/workflows/
-  build.yml                         Build + test on every push; publish (push to GHCR, sign, attest) only on the weekly Monday cron or manual dispatch; akmods↔kernel coupling check
-  build-disk.yml                    Disk image builds (qcow2 — the cloud-image deliverable)
-  vendor-drift-watch.yml            Weekly diff of vendored .repo files vs upstream; opens an issue on drift
-  renovate-notify.yml               Comments on the Renovate activity log (#36) when a dependency change lands on main
-  monday-cockpit.yml                Weekly Monday digest of everything that needs the maintainer, posted to a pinned issue
-cosign.pub                          Public signing key
-renovate.json                       Renovate (sole dep bot): pins action SHAs + base digests, auto-merges green digest bumps
-UPDATING.md                         Maintainer runbook: rolling the base, the akmods kernel dance, out-of-band builds
-docs/update-strategy.md             Why updates flow the way they do (ancestry, build-time vs runtime planes)
-SECURITY.md / SECURITY-TODO.md      Public security policy / private hardening backlog
-KEY-POLICY.md                       Signing-key lifecycle (rotation, access, incident response)
-```
-
-## What this image is not
-
-- Not a hobbyist image. Customizability is for the maintainer, not the user.
-- Not a gaming image. See [Bazzite](https://bazzite.gg/) for that.
-- Not a general-purpose desktop. Packages are chosen for ML/cloud workstation use.
-- Not GNOME. KDE only.
+- [SECURITY.md](SECURITY.md): binding threat model, assurances, and limitations.
+- [UPDATING.md](UPDATING.md): release, verification, and recovery operations.
+- [KEY-POLICY.md](KEY-POLICY.md): active/recovery signer lifecycle and fleet
+  evidence requirements.
+- [SECURITY-TODO.md](SECURITY-TODO.md): short active risk register.
+- [ONBOARDING.md](ONBOARDING.md): non-authoritative product guidance linking
+  back to the documents above.

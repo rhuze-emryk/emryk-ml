@@ -1,11 +1,8 @@
 # Private egress (VPN)
 
-Earlier releases shipped a `:latest-private-ml` variant that baked the Mullvad
-VPN daemon into the image. That was retired: embedding a single commercial VPN
-vendor in every image works against the project principle of *no lock-in* — if
-the vendor is acquired, changes policy, or its package repo moves, every image
-carries that liability. So private egress is now something you **enable**, not
-something we **embed**.
+Private egress is something you **enable**, not something the NVIDIA or Intel
+image embeds. Baking a commercial VPN daemon into both variants would create an
+unnecessary package and policy dependency for every managed host.
 
 To be honest about the boundary: that same argument applies in principle to
 Tailscale, which *is* embedded as the management plane. That is the image's one
@@ -59,9 +56,7 @@ Mullvad account directly, independent of Tailscale), layer it yourself with
 `rpm-ostree`. This **re-introduces the vendor dependency on your machine** — a
 deliberate choice you own, not a default we ship.
 
-1. Add Mullvad's repo. The file below is the one this repo used to vendor; it
-   pins `gpgcheck=1` so the package signature is verified against Mullvad's key
-   at install time:
+1. Add Mullvad's repository with package-signature checking enabled:
 
    ```ini
    # /etc/yum.repos.d/mullvad.repo

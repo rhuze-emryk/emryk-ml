@@ -1,164 +1,131 @@
-# Signing Key Policy
+# Signing-key and recovery policy
 
-This document describes how the cosign signing key for `ghcr.io/rhuze-emryk/emryk-ml` is managed: where it lives, who can use it, when it gets rotated, and what we do if it leaks.
+This policy covers the long-lived key used to authorize Emryk container
+digests. GitHub OIDC provenance/SBOM attestations use a separate identity and do
+not replace the container signer.
 
-Audience: maintainers of this repo, plus any commercial customer evaluating Emryk's supply-chain story.
+## Roles and custody
 
----
+| Role | Private-key custody | Public-key location | Purpose |
+|---|---|---|---|
+| Active signer | Encrypted `SIGNING_SECRET` in the protected `production-signing` environment; password in separate `SIGNING_PASSWORD` | `cosign.pub` and `/etc/pki/containers/rhuze-emryk.pub` | Routine approved releases |
+| Offline recovery signer | Encrypted removable/offline storage controlled by the maintainer; never GitHub, the repository, Codex, CI, or a normal workstation | `recovery-cosign.pub` and `/etc/pki/containers/rhuze-emryk-recovery.pub` after bootstrap | Recover from active-key compromise and preserve a permanent trust anchor |
 
-## Scope
+Only public halves, fingerprints, and hashes may enter review. Never paste a
+private key or passphrase into an issue, pull request, shell transcript,
+workspace, AI prompt, CI artifact, or chat.
 
-A single cosign keypair is currently used to sign every image published to `ghcr.io/rhuze-emryk/emryk-ml`. The public half is in this repo at `cosign.pub` and is shipped into every built image at `/etc/pki/containers/rhuze-emryk.pub`. The private half lives only in the GitHub Actions secret `SIGNING_SECRET` on the `rhuze-emryk/emryk-ml` repository.
+The offline recovery public key has not yet been supplied. Until the bootstrap
+below is complete, hosts trust only the active key and active-key compromise is
+a manual-recovery event. This is a P0 risk, not an implied capability.
 
-Installed Emryk Workstation hosts trust this public key absolutely for pulls from the `ghcr.io/rhuze-emryk` namespace — see `build_files/containers-policy.json` and SECURITY-TODO item #2.
+## Policy semantics
 
----
+Alternative trusted signers are expressed by one `sigstoreSigned` requirement
+with a `keyPaths` array:
 
-## Threat model
-
-If `SIGNING_SECRET` is exfiltrated:
-
-- An attacker can sign arbitrary container images as if they were us. Any Emryk Workstation host that pulls a matching tag will accept and stage the malicious image, because the host's `policy.json` requires only that the signature verify against our public key.
-- Once such an image boots, the attacker is root on the box.
-- The auto-update timer (SECURITY-TODO #7) means this propagates to every running host within ~8 hours of the malicious image being pushed to GHCR.
-- **Every signature ever produced before the leak becomes suspect** — we cannot prove the attacker didn't backdate by retaining timestamps.
-
-Compromise of the signing key is the single highest-impact event in this product's threat model.
-
----
-
-## Access policy
-
-**Where the private key lives:**
-
-- GitHub repository secret `SIGNING_SECRET` in `rhuze-emryk/emryk-ml`. This is the only location the private key should exist outside of an offline backup.
-- An offline backup (encrypted, air-gapped) is recommended for disaster recovery. Maintainer's responsibility; not committed anywhere.
-
-**Who can use it:**
-
-- Today: any workflow run on `rhuze-emryk/emryk-ml` triggered by anyone with `write` permission on the repo. This is the GitHub default and is **too permissive**.
-- Target: gate `SIGNING_SECRET` behind a GitHub Environment with manual-approval protection. See [GitHub Environment runbook](#github-environment-runbook) below.
-
-**Workflow access boundary:**
-
-- `SIGNING_SECRET` is read only by the "Sign container image" step in `build.yml`. No other step references it. A compromised earlier step in the same job would still expose it, so the GitHub Environment gate is the meaningful boundary.
-
----
-
-## Rotation cadence
-
-- **Scheduled rotation: annually**, on or near the calendar anniversary of the current key. Calendar-anchored so it does not drift.
-- **On-incident rotation: immediately**, the moment compromise is suspected. Do not wait to confirm — rotate first, investigate second.
-
-The next scheduled rotation date is tracked in [SECURITY-TODO.md](./SECURITY-TODO.md) as a dated item in the status log.
-
----
-
-## Rotation procedure
-
-Rotation is **non-destructive** if you ship a transition image first that trusts BOTH keys. Skip the transition image at your own risk — hosts that update past the rotation point cannot verify images signed with the previous key, and the rollback path breaks.
-
-### Step 1 — generate the new keypair (locally, offline)
-
-```bash
-cosign generate-key-pair
-# Produces cosign.key (private) and cosign.pub (public) in cwd.
-# When prompted, set a strong passphrase. Store the passphrase separately.
+```json
+{
+  "type": "sigstoreSigned",
+  "keyPaths": [
+    "/etc/pki/containers/rhuze-emryk.pub",
+    "/etc/pki/containers/rhuze-emryk-recovery.pub"
+  ],
+  "signedIdentity": { "type": "matchRepository" }
+}
 ```
 
-### Step 2 — ship a transition image that trusts both keys
+Do not create one requirement per key. Requirements in the policy array are
+cumulative, so that shape would require every signature instead of accepting
+any trusted signer.
 
-Before changing what signs images, ship a build that *accepts* both the old and new keys. This is the graceful-rotation window — a host that was on the pre-transition image can still update through the transition image and onward.
+## One-time recovery bootstrap
 
-1. Add the new public key to the build context: copy the new `cosign.pub` to `cosign-2027.pub` (or whatever calendar year) at repo root. Leave the existing `cosign.pub` in place — for now, both files coexist.
-2. Update `build_files/build.sh` to install both keys:
+The offline custodian performs these steps without exposing private material to
+the repository workspace:
+
+1. On an offline machine, generate a new encrypted cosign key pair with a unique
+   passphrase and create two tested backup copies of the encrypted private key.
+2. Transfer only the public half into this repository as `recovery-cosign.pub`.
+   Record and independently compare its SHA-256 and public-key fingerprint.
+3. Update the image build to install it as
+   `/etc/pki/containers/rhuze-emryk-recovery.pub`, add that path to the existing
+   `keyPaths`, and require both variant smoke legs to find both paths.
+4. Publish the resulting transition image with the still-trusted active key.
+5. Collect digest-qualified `bootc status --json` evidence that every managed
+   host has actually booted this transition image. A staged deployment or a
+   waiting period is insufficient.
+6. Mark pre-bootstrap/unobserved hosts as manual-recovery cases. The recovery
+   key remains trusted in all later normal images.
+
+## Planned active-key rotation
+
+A yearly review is the target cadence, but rotation must not be described as
+operational until the rehearsal gate below has passed and been recorded.
+
+1. Generate an encrypted next-active key offline. Move only its public half into
+   a reviewed transition change.
+2. Publish an old-active-key-signed transition image whose single `keyPaths`
+   requirement trusts old active, next active, and recovery public keys.
+3. Confirm every managed host has booted the exact transition digest. Fleet
+   management records must identify host, observed booted digest, and time.
+4. Replace `SIGNING_SECRET` and `SIGNING_PASSWORD` in the protected environment
+   with the next-active encrypted key and password. Do not weaken environment
+   reviewers or branch restrictions during this change.
+5. Dispatch a release. It must sign with the new active key, verify against the
+   newly committed active public key, pass both VM legs, and only then promote.
+6. Publish a new-active-key-signed cleanup image that keeps new active plus
+   recovery and removes old active. Remove old trust only after fleet evidence
+   proves every managed host has booted a deployment that trusts the new key.
+7. Archive the retired encrypted private key offline according to incident and
+   audit needs; remove it from active GitHub secrets.
+
+## Incident recovery
+
+Assume the active private key is compromised when its confidentiality or
+passphrase separation cannot be demonstrated.
+
+1. Freeze normal publishing and deny pending `production-signing` deployments.
+   Preserve Actions, registry, environment, and access logs.
+2. Generate a fresh encrypted active key offline and commit only its public
+   half in an incident change.
+3. Build an isolated candidate whose trust set contains fresh active plus the
+   permanent recovery key and excludes the compromised active key. Both exact
+   staged digests must pass scan and hosted VM boot gates.
+4. On the controlled recovery machine, authenticate to GHCR, set
+   `RECOVERY_PRIVATE_KEY` to the encrypted private key outside the repository,
+   obtain `COSIGN_PASSWORD` interactively without logging it, and run:
+
    ```bash
-   install -m 0644 /ctx/cosign.pub      /etc/pki/containers/rhuze-emryk.pub
-   install -m 0644 /ctx/cosign-2027.pub /etc/pki/containers/rhuze-emryk-2027.pub
+   scripts/offline-recovery-release.sh \
+     ghcr.io/rhuze-emryk/emryk-ml@sha256:INCIDENT_DIGEST \
+     latest YYYYMMDD latest.YYYYMMDD
    ```
-3. Update `build_files/containers-policy.json` to accept either signature:
-   ```json
-   "ghcr.io/rhuze-emryk": [
-     {
-       "type": "sigstoreSigned",
-       "keyPath": "/etc/pki/containers/rhuze-emryk.pub",
-       "signedIdentity": {"type": "matchRepository"}
-     },
-     {
-       "type": "sigstoreSigned",
-       "keyPath": "/etc/pki/containers/rhuze-emryk-2027.pub",
-       "signedIdentity": {"type": "matchRepository"}
-     }
-   ]
-   ```
-   Either entry matching the pulled image is sufficient (logical OR).
-4. Commit and push. CI builds and signs the transition image with the OLD key (the GitHub secret has not changed yet).
-5. Wait for the auto-update timer to propagate the transition image to all known hosts (~24h conservative). Verify on at least one operator host with `bootc status` that the transition build is booted.
 
-### Step 3 — flip the signing key in GitHub Actions
+   Repeat for the Intel digest. The script signs with the offline key, verifies
+   against the committed recovery public key using the repository's pinned
+   cosign v3.0.6 attachment mode, and promotes only after verification.
+5. Confirm booted digest evidence from recovery-enabled hosts. Use console or a
+   known-good deployment for hosts predating the bootstrap.
+6. Replace the protected active secrets with the fresh key, review the incident
+   root cause, and resume normal publishing only after containment.
 
-1. In github.com → Settings → Secrets → Actions, update the value of `SIGNING_SECRET` to the new private key (the contents of `cosign.key` from Step 1).
-2. Trigger a new build of `:latest`. CI will sign it with the new key.
-3. Hosts on the transition image accept the new signature because their policy.json trusts both keys. Bootc updates land normally.
+## Rehearsal gate
 
-### Step 4 — retire the old key
+`tests/rehearse-key-rotation.sh` generates encrypted ephemeral
+old/next/recovery/fresh/unrelated keys and uses a disposable registry to prove:
 
-After enough time has passed that no in-use host is on a pre-transition image (recommend 30+ days for a fleet of any size):
+- old, next, and recovery signatures each work independently during transition;
+- unsigned and unrelated-key images fail;
+- recovery and fresh signatures work after incident rotation; and
+- the removed old signer fails after incident rotation.
 
-1. Remove the old key from `containers-policy.json`.
-2. Remove the install line from `build.sh`.
-3. Delete the old `cosign.pub` from the repo (rename `cosign-2027.pub` → `cosign.pub` if desired, for naming continuity).
-4. Commit, push. The new image only trusts the new key. Hosts that somehow got stuck on a pre-transition image will fail to update from this point and will need manual recovery.
+That cryptographic harness is necessary but not sufficient. A complete recorded
+rehearsal also publishes disposable transition and incident candidates through
+the two-variant VM boot gate, observes a booted transition digest before secret
+replacement, and verifies the final cleanup trust set. Do not close the P0 risk
+or claim the annual procedure is operational until both parts pass.
 
-### Step 5 — record the rotation
-
-Append to [SECURITY-TODO.md](./SECURITY-TODO.md) status log:
-
-```
-- YYYY-MM-DD — signing key rotated. Old key retired YYYY-MM-DD. Next scheduled rotation: YYYY-MM-DD.
-```
-
----
-
-## Incident response
-
-If `SIGNING_SECRET` is suspected of compromise:
-
-1. **Within the hour:** rotate `SIGNING_SECRET` in GitHub Actions to a freshly-generated value. Do not wait for confirmation. The cost of an unnecessary rotation is hours; the cost of waiting on a real compromise is the fleet.
-2. **Within the day:** ship a transition image trusting both old and new keys (the standard rotation Step 2). This is necessary even in incident mode — a hard cutover orphans the fleet.
-3. **Investigate** what was signed in the window between when the key could have been exfiltrated and when it was rotated. Use the Rekor transparency log: every cosign signature lands in Rekor by default. Cross-reference Rekor entries against your authorized builds.
-4. **If unauthorized signatures exist** in Rekor for our key, treat every image signed by the compromised key as suspect. Notify customers. Roll back any hosts that pulled an unauthorized image. Document the incident publicly.
-5. **Retire the old key** more aggressively than the scheduled procedure — as soon as you are confident the fleet has the transition image. Do not leave the compromised key as an accepted signer one minute longer than necessary.
-
----
-
-## GitHub Environment runbook
-
-To move `SIGNING_SECRET` from a repository-level secret to an environment-scoped secret behind a manual-approval gate. This is a one-time setup; do it during the next maintenance window.
-
-1. In github.com → repository **Settings → Environments → New environment**, name it `production-signing`.
-2. Under **Deployment protection rules**, enable **Required reviewers** and add yourself (or a maintainers list). Optionally set a **Wait timer** of a few minutes to give yourself a chance to cancel an unintended run.
-3. Under **Deployment branches**, restrict to `main` only. Tags and other branches cannot trigger this environment.
-4. Under **Environment secrets**, add `SIGNING_SECRET` with the current private key value.
-5. In github.com → **Settings → Secrets and variables → Actions**, **delete** the repository-level `SIGNING_SECRET`. From this point only the environment-scoped one exists.
-6. Edit `.github/workflows/build.yml` — on the job that does the cosign signing, add:
-   ```yaml
-   environment: production-signing
-   ```
-   at the job level (sibling of `runs-on:`).
-7. Commit, push. The next *publishing* run — the weekly Monday build or a manual **Run workflow** — will pause at the signing job and require the configured reviewer to approve before the secret is exposed. (A plain push to `main` builds and tests but no longer reaches the signing step, so trigger a `workflow_dispatch` if you want to exercise the gate immediately.)
-
-Note: this **does not** prevent a maintainer who can approve from authorizing a malicious workflow. It prevents accidental exposure (e.g., a PR that accidentally references the secret) and gives a human a chance to inspect each signing event.
-
----
-
-## Keyless signing roadmap
-
-Sigstore keyless signing — where the workflow's OIDC token from GitHub Actions is exchanged with Fulcio for a short-lived signing certificate, and the signature is logged in Rekor — eliminates the long-lived signing secret entirely. There is no `SIGNING_SECRET` to leak.
-
-This is the modern best practice and the direction this project should move.
-
-- **Target: evaluate keyless by end of 2026.** Stand up a parallel `:latest-keyless` build that signs the same image with both the current keypair and keyless. Validate that customer-side verification works against both.
-- **Target: migrate by end of 2027.** Drop the keypair entirely; ship a final transition image that accepts both keypair signatures and keyless; then ship a post-transition image that accepts only keyless. Customer-facing `cosign verify` command updates to use `--certificate-identity` and `--certificate-oidc-issuer`.
-
-Until that migration completes, the rotation policy in this document is operative.
+Keyless signing remains a separate evaluation. Any proposal must preserve an
+offline recovery route, constrain workload identity narrowly, work with host
+pull policy, and rehearse rollback before changing this policy.

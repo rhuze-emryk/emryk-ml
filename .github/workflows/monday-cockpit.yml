@@ -1,16 +1,9 @@
-name: Monday cockpit
+name: Monday repository cockpit
 
-# One weekly digest of everything that needs the maintainer, posted as a comment
-# on the pinned "Monday cockpit" issue. The signals it aggregates are otherwise
-# scattered across the Renovate dashboard, the open-PR list, the kernel-coupling
-# check and vendor-drift issues; this collapses them into a single place, in the
-# order of UPDATING.md "Your Monday routine". Doing nothing is always safe — the
-# cockpit only reports state, it never changes anything.
-
+# Repository-scoped signals only. Host and service monitoring belongs in the
+# host-infrastructure repository, where the deployed state is authoritative.
 on:
   schedule:
-    # Monday 13:30 UTC — after Renovate (weekend + Monday <=09:00), the weekly build (10:05) and
-    # vendor-drift-watch (13:00), so the digest reflects all of them. ~09:30 EDT.
     - cron: '30 13 * * MON'
   workflow_dispatch:
 
@@ -22,179 +15,124 @@ permissions:
 
 jobs:
   cockpit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      # Ledger of the gluetun digest deployed in the anias torrent-jail quadlet
-      # (~/.config/containers/systemd/gluetun.container). User quadlets are
-      # invisible to Renovate, so the cockpit compares this against upstream's
-      # v3 tag instead. After bumping the pin on the host, update this value to
-      # match and the cockpit goes quiet again.
-      GLUETUN_PINNED: sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027
+
     steps:
-      - name: Post Monday cockpit comment
+      - name: Post repository operations summary
         run: |
           set -euo pipefail
           today=$(date -u +%Y-%m-%d)
 
-          # --- open PRs, normalised into buckets ---------------------------------
-          # A PR is "red" if any rollup check failed (this is how the kernel-
-          # coupling failure surfaces even though Renovate enabled auto-merge on
-          # it); "needs you" if it is open, not draft, not red and does NOT have
-          # auto-merge enabled (Action SHAs, GRYPE/SYFT, security CVEs).
           prs=$(gh pr list --state open --limit 50 \
-            --json number,title,url,isDraft,autoMergeRequest,statusCheckRollup \
+            --json number,title,isDraft,autoMergeRequest,statusCheckRollup \
             2>/dev/null || echo '[]')
-          norm=$(printf '%s' "$prs" | jq -c '
-            def res: (.conclusion // .state // .status // "") | ascii_upcase;
+          normalized=$(jq -c '
+            def result: (.conclusion // .state // .status // "") | ascii_upcase;
             [ .[] | {
-                number, title, url, isDraft,
-                autoMerge: (.autoMergeRequest != null),
-                red:     ([ (.statusCheckRollup // [])[] | res ] | any(IN("FAILURE","ERROR","CANCELLED","TIMED_OUT","ACTION_REQUIRED","STARTUP_FAILURE"))),
-                pending: ([ (.statusCheckRollup // [])[] | res ] | any(IN("IN_PROGRESS","PENDING","QUEUED","WAITING","REQUESTED","EXPECTED","")))
-              } ]')
+              number, title, isDraft,
+              autoMerge: (.autoMergeRequest != null),
+              red: ([ (.statusCheckRollup // [])[] | result ]
+                | any(IN("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"))),
+              pending: ([ (.statusCheckRollup // [])[] | result ]
+                | any(IN("IN_PROGRESS", "PENDING", "QUEUED", "WAITING", "REQUESTED", "EXPECTED", "")))
+            } ]
+          ' <<<"$prs")
 
-          needs=$(printf '%s' "$norm" | jq -r '
-            .[] | select(.isDraft|not) | select(.autoMerge|not) | select(.red|not)
-            | "- #\(.number) \(.title)\(if .pending then "  _(checks still running — merge once green)_" else "" end)"')
-          red=$(printf '%s' "$norm" | jq -r '
-            .[] | select(.isDraft|not) | select(.red)
-            | "- #\(.number) \(.title)"')
-          auto_n=$(printf '%s' "$norm" | jq -r '
-            [ .[] | select(.isDraft|not) | select(.autoMerge) | select(.red|not) ] | length')
+          needs=$(jq -r '
+            .[] | select(.isDraft | not) | select(.autoMerge | not) | select(.red | not)
+            | "- #\(.number) \(.title)\(if .pending then " _(checks running)_" else "" end)"
+          ' <<<"$normalized")
+          red=$(jq -r '
+            .[] | select(.isDraft | not) | select(.red)
+            | "- #\(.number) \(.title)"
+          ' <<<"$normalized")
+          auto_count=$(jq -r '[.[] | select(.isDraft | not) | select(.autoMerge) | select(.red | not)] | length' \
+            <<<"$normalized")
 
-          # --- vendored repo drift issues still open -----------------------------
-          drift=$(gh issue list --state open --search 'in:title "drifted from upstream"' \
-            --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || true)
+          drift=$(gh issue list --state open \
+            --search 'in:title (drifted OR "SECURITY REVIEW")' \
+            --json number,title --jq '.[] | "- #\(.number) \(.title)"' \
+            2>/dev/null || true)
 
-          # --- anias torrent-jail gluetun pin ------------------------------------
-          # Anonymous pull-token + manifest HEAD; no skopeo dependency. Every
-          # step is || true so a Docker Hub hiccup degrades to "check skipped"
-          # instead of killing the whole cockpit.
-          jail="- _could not reach Docker Hub — check skipped this week_"
-          tok=$(curl -fsSL 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:qmcgaw/gluetun:pull' \
-            | jq -r '.token // empty' || true)
-          if [ -n "$tok" ]; then
-            cur=$(curl -fsSI -H "Authorization: Bearer $tok" \
-              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
-              'https://registry-1.docker.io/v2/qmcgaw/gluetun/manifests/v3' \
-              | tr -d '\r' | awk 'tolower($1)=="docker-content-digest:" {print $2}' || true)
-            if [ -n "$cur" ]; then
-              if [ "$cur" = "$GLUETUN_PINNED" ]; then
-                jail="- _anias pin matches upstream \`v3\` — nothing to do_"
-              else
-                jail="- ⚠️ Upstream \`gluetun:v3\` moved to \`${cur}\` — anias is pinned to \`${GLUETUN_PINNED}\`. Review the [release notes](https://github.com/qdm12/gluetun/releases) (upstream moved qdm12→passteque around v3.41.3 — read with that in mind), then bump the digest in \`~/.config/containers/systemd/gluetun.container\` on anias and update \`GLUETUN_PINNED\` in \`monday-cockpit.yml\`."
-              fi
-            fi
-          fi
-
-          # --- automation liveness (absence detection) ---------------------------
-          # A dead Renovate looks like a CLEAN cockpit: no PRs, nothing red,
-          # "0 auto-merge PRs" reads as calm instead of as an outage. That is
-          # exactly how the 2026-07-06 publish failure happened — the bot had
-          # been silent since ~June 11, the base pin went stale, and the Monday
-          # build died on mesa multilib skew. Two cheap absence signals:
-          # the age of the base digest pin (Renovate should refresh it weekly)
-          # and the age of Renovate's own Dependency Dashboard edits.
-          now_s=$(date -u +%s)
-          stale=""
+          now_seconds=$(date -u +%s)
+          health=''
           pin_date=$(gh api "repos/$GH_REPO/commits?path=Containerfile&per_page=1" \
-            --jq '.[0].commit.committer.date' 2>/dev/null || echo '')
-          if [ -n "$pin_date" ]; then
-            pin_age=$(( (now_s - $(date -u -d "$pin_date" +%s)) / 86400 ))
-            if [ "$pin_age" -gt 10 ]; then
-              stale="${stale}- ⚠️ The base digest pin is **${pin_age} days old** (Containerfile last touched ${pin_date%%T*}). Renovate normally refreshes it weekly — a stale base eventually fails the build on multilib skew.\n"
+            --jq '.[0].commit.committer.date' 2>/dev/null || true)
+          if [[ -n $pin_date ]]; then
+            pin_seconds=$(date -u -d "$pin_date" +%s)
+            pin_age=$(( (now_seconds - pin_seconds) / 86400 ))
+            if (( pin_age > 10 )); then
+              health+="- Base-image pins are ${pin_age} days old; confirm Renovate is running.\\n"
             fi
           fi
-          dash_date=$(gh issue list --state open --search 'in:title "Dependency Dashboard"' \
-            --json updatedAt --jq '.[0].updatedAt // ""' 2>/dev/null || echo '')
-          if [ -n "$dash_date" ]; then
-            dash_age=$(( (now_s - $(date -u -d "$dash_date" +%s)) / 86400 ))
-            if [ "$dash_age" -gt 8 ]; then
-              stale="${stale}- ⚠️ Renovate has not touched its [Dependency Dashboard](/${GH_REPO}/issues) in **${dash_age} days** — the bot may have stopped running. Check https://developer.mend.io/github/${GH_REPO}.\n"
+          dashboard_date=$(gh issue list --state open --search 'in:title "Dependency Dashboard"' \
+            --json updatedAt --jq '.[0].updatedAt // ""' 2>/dev/null || true)
+          if [[ -n $dashboard_date ]]; then
+            dashboard_seconds=$(date -u -d "$dashboard_date" +%s)
+            dashboard_age=$(( (now_seconds - dashboard_seconds) / 86400 ))
+            if (( dashboard_age > 8 )); then
+              health+="- Renovate has not updated its Dependency Dashboard in ${dashboard_age} days.\\n"
             fi
           fi
 
-          # --- this week's scheduled publish run ---------------------------------
           run=$(gh run list --workflow build.yml --event schedule --limit 1 \
-            --json status,conclusion,url --jq '.[0]' 2>/dev/null || echo '')
-          if [ -z "$run" ] || [ "$run" = "null" ]; then
-            publish="No scheduled build run found yet — it fires Mondays at 10:05 UTC."
+            --json status,conclusion,url --jq '.[0]' 2>/dev/null || true)
+          if [[ -z $run || $run == null ]]; then
+            publish='No scheduled release run found; it normally starts Monday at 10:05 UTC.'
           else
-            st=$(printf '%s' "$run" | jq -r '.status // ""')
-            cc=$(printf '%s' "$run" | jq -r '.conclusion // ""')
-            url=$(printf '%s' "$run" | jq -r '.url // ""')
-            case "$st" in
-              completed)
-                case "$cc" in
-                  success) publish="✅ Already published — [run](${url}). Nothing to do." ;;
-                  *)       publish="❌ The build [failed](${url}) — open it before approving." ;;
-                esac ;;
-              waiting)     publish="⏳ **Waiting for your approval** → [open the run](${url}) → Review deployments → Approve." ;;
-              in_progress|queued) publish="🔄 Building now — it will pause for your approval shortly: [run](${url})." ;;
-              *)           publish="[Latest scheduled run](${url}) — status: ${st}." ;;
+            status=$(jq -r '.status // ""' <<<"$run")
+            conclusion=$(jq -r '.conclusion // ""' <<<"$run")
+            url=$(jq -r '.url // ""' <<<"$run")
+            case "$status:$conclusion" in
+              completed:success) publish="Published successfully: [run](${url})." ;;
+              completed:*) publish="Release failed: [run](${url})." ;;
+              waiting:*) publish="Waiting for production-signing approval: [run](${url})." ;;
+              in_progress:*|queued:*) publish="Build, scan, or boot gates are running: [run](${url})." ;;
+              *) publish="Latest scheduled run (${status}): [run](${url})." ;;
             esac
           fi
 
-          [ -n "$needs" ] || needs="- _none — nothing waiting on you_"
-          [ -n "$red" ]   || red="- _none_"
-          [ -n "$drift" ] || drift="- _none open_"
+          [[ -n $needs ]] || needs='- _none_'
+          [[ -n $red ]] || red='- _none_'
+          [[ -n $drift ]] || drift='- _none_'
+          [[ -n $health ]] || health='- _Renovate and pin-age signals are current._'
 
-          # --- assemble the comment ----------------------------------------------
-          # Static lines are single-quoted so backticks/$ stay literal; dynamic
-          # values are passed as printf args (never embedded in the format).
           {
-            printf '## 🗓️ Monday cockpit — %s\n\n' "$today"
-            # The @mention below is load-bearing, not decoration: it forces a
-            # GitHub email notification to the maintainer regardless of issue
-            # subscription state. The maintainer's whole low-effort operating
-            # model is "one cockpit email every Monday; read it, do what it
-            # says; NO email by Monday evening = the automation itself is
-            # broken, go look at Actions." Remove the mention and that
-            # dead-man's switch goes silent.
-            printf '@%s — your one weekly email. If a Monday ever passes without it, the cockpit itself is broken: check the Actions tab.\n\n' "${GH_REPO%%/*}"
-            echo 'Top to bottom. Doing nothing is safe — last week'\''s signed image stays live.'
+            printf '## Monday repository cockpit — %s\n\n' "$today"
+            printf '@%s — repository release and dependency signals only.\n\n' "${GH_REPO%%/*}"
+            echo '**Automation health**'
             echo
-            if [ -n "$stale" ]; then
-              echo '**0 · 🚨 Automation health — something that should have happened, did not**'
-              echo
-              printf '%b\n' "$stale"
-            fi
-            echo '**1 · Approve this week'\''s publish**'
+            printf '%b\n' "$health"
+            echo '**Weekly publish**'
             echo
             printf '%s\n\n' "$publish"
-            echo '_Ships what auto-merged over the weekend. PRs you merge today ride next Monday — or use **Run workflow** to publish now._'
-            echo
-            echo '**2 · PRs that need your merge** (hand-merge the green ones)'
+            echo '**PRs needing maintainer review**'
             echo
             printf '%s\n\n' "$needs"
-            printf '**3 · ⚠️ Red / blocked PRs** — a red `kinoite-main` PR is the coupling dance ([UPDATING.md §1](/%s/blob/main/UPDATING.md#1-the-coupling-dance--rolling-the-base-kernel-forward))\n\n' "$GH_REPO"
+            echo '**Red or blocked PRs**'
+            echo
             printf '%s\n\n' "$red"
-            echo '**4 · Vendored repo drift**'
+            echo '**Vendored dependency/security drift**'
             echo
             printf '%s\n\n' "$drift"
-            echo '**5 · Host pins — anias torrent jail (gluetun)**'
-            echo
-            printf '%s\n\n' "$jail"
-            echo '---'
-            printf '<sub>FYI: %s Renovate PR(s) have auto-merge on — they land on their own once green. Full routine: [UPDATING.md](/%s/blob/main/UPDATING.md). Posted every Monday ~13:30 UTC by `monday-cockpit.yml`.</sub>\n' "$auto_n" "$GH_REPO"
+            printf '<sub>%s green Renovate PR(s) currently have auto-merge enabled. See [UPDATING.md](/%s/blob/main/UPDATING.md).</sub>\n' \
+              "$auto_count" "$GH_REPO"
           } > /tmp/cockpit.md
 
-          # --- find-or-create the cockpit issue, then comment --------------------
-          title="🗓️ Monday cockpit"
-          num=$(gh issue list --state open --search 'in:title "Monday cockpit"' \
-            --json number --jq '.[0].number // ""' 2>/dev/null || echo "")
-          if [ -z "$num" ]; then
-            # gh issue create prints the new issue URL; take the trailing number
-            # (avoids the search-index lag of a re-lookup right after creation).
+          title='Monday repository cockpit'
+          issue_number=$(gh issue list --state open --search 'in:title "Monday repository cockpit"' \
+            --json number --jq '.[0].number // ""')
+          if [[ -z $issue_number ]]; then
             issue_url=$(gh issue create --title "$title" \
-              --body "Your single weekly checklist. A new comment lands here every Monday ~13:30 UTC with what needs you that week — see [UPDATING.md](/${GH_REPO}/blob/main/UPDATING.md). **Pin this issue** so it is easy to find.")
-            num=$(printf '%s' "$issue_url" | grep -oE '[0-9]+$' || true)
+              --body "Weekly repository release and dependency summary. See [UPDATING.md](/${GH_REPO}/blob/main/UPDATING.md).")
+            issue_number=${issue_url##*/}
           fi
-          if [ -z "$num" ]; then
-            echo "::error::Could not determine the Monday cockpit issue number."
+          [[ $issue_number =~ ^[0-9]+$ ]] || {
+            echo '::error::Could not determine cockpit issue number.'
             exit 1
-          fi
-          gh issue comment "$num" --body-file /tmp/cockpit.md
-          echo "Posted cockpit to issue #${num}"
+          }
+          gh issue comment "$issue_number" --body-file /tmp/cockpit.md

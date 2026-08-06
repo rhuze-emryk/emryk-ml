@@ -38,21 +38,28 @@
       "minimumReleaseAge": "3 days"
     },
     {
-      "description": "Pin every GitHub Action by SHA (SECURITY-TODO #10).",
+      "description": "Pin every GitHub Action by full commit SHA.",
       "matchManagers": [
         "github-actions"
       ],
       "pinDigests": true
     },
     {
-      "description": "Pin every container base image by digest (SECURITY-TODO #1).",
+      "description": "Pin every container base image by digest.",
       "matchDatasources": [
         "docker"
       ],
       "pinDigests": true
     },
     {
-      "description": "Auto-merge container base-image *digest* refreshes once CI is green (SECURITY-TODO #31). The kernel<->akmods coupling check in build.yml is the safety interlock: a kinoite-main bump that moves the kernel fails that check, so Renovate cannot auto-merge it until the akmods tag is bumped by hand. Tag/version changes are not 'digest' updates and are never auto-merged. Customer machines fetch+stage only and never auto-reboot, so the human control gate is the reboot, not the merge.",
+      "description": "Hold cosign below v3.1: v3.1.x removed explicit legacy key-attachment selection and cannot verify these images when keyless OCI attestation bundles coexist. Re-evaluate with a live signature-policy rehearsal before lifting.",
+      "matchPackageNames": [
+        "sigstore/cosign"
+      ],
+      "allowedVersions": "<3.1.0"
+    },
+    {
+      "description": "Auto-merge container base-image digest refreshes once CI is green. The kernel<->akmods coupling check in build.yml is the safety interlock: a kinoite-main bump that moves the kernel fails until the akmods tag is updated. Tag/version changes are never auto-merged. Customer machines fetch and stage without rebooting.",
       "matchDatasources": [
         "docker"
       ],
@@ -65,7 +72,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Track GRYPE_VERSION env var against anchore/grype GitHub releases (SECURITY-TODO #3).",
+      "description": "Track GRYPE_VERSION against anchore/grype releases.",
       "managerFilePatterns": [
         "/^\\.github/workflows/.+\\.ya?ml$/"
       ],
@@ -77,7 +84,7 @@
     },
     {
       "customType": "regex",
-      "description": "Track SYFT_VERSION env var against anchore/syft GitHub releases (SECURITY-TODO #8).",
+      "description": "Track SYFT_VERSION against anchore/syft releases.",
       "managerFilePatterns": [
         "/^\\.github/workflows/.+\\.ya?ml$/"
       ],
@@ -86,6 +93,19 @@
       ],
       "depNameTemplate": "anchore/syft",
       "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "Track the digest-pinned bootc-image-builder used by workflows and the Justfile.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/",
+        "/^Justfile$/"
+      ],
+      "matchStrings": [
+        "(?:BIB_IMAGE:|builder-image:|bib_image := env\\(\\\"BIB_IMAGE\\\",)\\s*\\\"?quay\\.io/centos-bootc/bootc-image-builder:(?<currentValue>[^@\\\"\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "depNameTemplate": "quay.io/centos-bootc/bootc-image-builder",
+      "datasourceTemplate": "docker"
     }
   ]
 }

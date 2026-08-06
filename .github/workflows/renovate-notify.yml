@@ -2,7 +2,7 @@ name: Renovate activity notifier
 
 # Announce when Renovate lands on main — especially the container-digest
 # *auto-merges* that merge themselves with no prompt (see renovate.json). We
-# trigger off the build workflow's completion rather than the raw push so the
+# trigger off the build workflow's completion rather than the underlying push so the
 # notice can report the actual build result (green/red), then comment on the
 # tracking issue (#36). Watching that issue or the repo turns each entry into a
 # GitHub notification, which is the whole point: no more silent dependency
@@ -26,7 +26,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       (contains(github.event.workflow_run.head_commit.author.email, 'renovate') ||
        contains(github.event.workflow_run.head_commit.author.name, 'renovate'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Comment on the Renovate activity log (#36)
         env:
@@ -42,6 +42,6 @@ jobs:
           set -euo pipefail
           icon='✅'
           [ "$CONCLUSION" = 'success' ] || icon='❌'
-          body=$(printf '%s Renovate landed on `main`\n\n- **%s**\n- commit `%s` · build **%s**\n- [build run](%s)' \
+          body=$(printf '%s Renovate landed on main\n\n- **%s**\n- commit %s · build **%s**\n- [build run](%s)' \
             "$icon" "$TITLE" "${SHA:0:8}" "$CONCLUSION" "$RUN_URL")
           gh issue comment 36 --repo "$REPO" --body "$body"

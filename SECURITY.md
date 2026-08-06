@@ -1,98 +1,100 @@
-# Security Policy
+# Security policy
 
-`emryk-ml` is the public Fedora bootc image foundation for the [Emryk Workstation](https://emryk.com) — a managed ML cloud workstation product. This document describes what the image protects against, what it does not, and how to report a security issue.
+This document is the binding description of Emryk ML's security model. Product
+summaries and onboarding material defer to it when wording differs.
 
-## Supported versions
+## Supported releases
 
-The image is shipped as an immutable, bootc-managed deployment. Security fixes land via `latest`; older date-stamped builds are not back-supported.
+The current `:latest` deployment of each published image is supported:
 
-| Tag | Supported |
-|---|---|
-| `:latest` | ✅ Yes — current tested release |
-| `:latest.YYYYMMDD` / `:YYYYMMDD` | ⚠️ Date-stamped snapshots; not back-supported once a newer `:latest` exists |
-| `:latest-private-ml*` | ❌ Deprecated — variant retired, no longer built; switch to `:latest` |
-| Older releases | ❌ Not supported — use `bootc upgrade` to roll forward |
+- `ghcr.io/rhuze-emryk/emryk-ml:latest` (NVIDIA)
+- `ghcr.io/rhuze-emryk/emryk-ml-intel:latest` (Intel)
 
-The `bootc-fetch-apply-updates.timer` enabled in the image fetches updates roughly every 8 hours and stages them for the next user-initiated reboot. Customers running the image without disabling this timer pick up published fixes within ~24h after their next reboot.
+Date tags are immutable snapshots, not maintained release branches. Hosts must
+reboot into a staged deployment before its fixes become active.
 
-## Threat model — what this image protects against
+## Trust model
 
-| Threat | Mitigation | Mechanism |
+Publication is allowed only on the weekly schedule or a default-branch manual
+dispatch. Both variants are built and scanned, pushed under a staging tag, and
+resolved to immutable digests. Each digest must then boot under KVM with OVMF
+and pass the assertions in `tests/boot-smoke-guest.sh`. Only then does the
+protected `production-signing` environment request approval.
+
+After approval, the workflow signs the staged digest with the encrypted active
+key, verifies that signature against the committed active public key, promotes
+the same digest to release tags, and attaches provenance and SBOM attestations.
+Tag promotion uses digest-preserving registry copies. Ordinary pushes to
+`main`, pull requests, and unapproved runs do not move release tags.
+
+The release provides three complementary, independently inspectable artifacts:
+
+1. The Emryk cosign signature trusts the active public key in this repository.
+   Installed hosts enforce it through one `sigstoreSigned` policy requirement
+   whose `keyPaths` are alternatives. The offline recovery public key becomes a
+   second permanent alternative only after its explicit bootstrap transition.
+2. Build provenance trusts the GitHub Actions OIDC workload identity and the
+   Sigstore/GitHub attestation verification path. It identifies the repository,
+   workflow, commit, and subject digest; it does not make the workflow or source
+   code benign.
+3. The CycloneDX SBOM attestation uses the same workload identity and inventories
+   the image's RPM database. It is not a complete filesystem or language-package
+   inventory.
+
+The signing key and GitHub OIDC identity are different trust roots. Inspecting
+all artifacts provides more evidence than inspecting one, but compromise of the
+source, authorized workflow, or dependencies can still produce internally
+consistent malicious artifacts.
+
+## Implemented controls and bounds
+
+| Area | Implemented control | Important bound |
 |---|---|---|
-| Malicious image substitution (registry tampering, MITM, supply-chain compromise of GHCR) | All images from `ghcr.io/rhuze-emryk` are cosign-signed; installed hosts verify the signature on every pull. SLSA build provenance and CycloneDX SBOM are also attached as Sigstore-signed OCI referrers for independent verification | `/etc/containers/policy.json` + `/etc/pki/containers/rhuze-emryk.pub`; `gh attestation verify` for provenance/SBOM |
-| Upstream base-image silent rewrite (`:latest` tag pointing at a new manifest) | Base images are pinned by digest, not tag | `Containerfile` |
-| Wide LAN / internet exposure of management plane | Default firewall zone (`public`) accepts only the DHCPv6 client; the entire management plane — SSH and Cockpit — is reachable only over Tailscale | `/etc/firewalld/zones/public.xml` and `tailscale.xml` |
-| Unauthenticated SSH access (password brute force, root login) | Key-only authentication, no root login, no keyboard-interactive | `/etc/ssh/sshd_config.d/10-emryk.conf` |
-| Local privilege escalation via container API | Rootful `podman.socket` is disabled; rootless per-user socket enabled by default — scoped to the user's own privileges, with no path to root | `build_files/build.sh` |
-| Unattended reboots killing long-running workloads | Auto-update timer fetches and stages updates only; never reboots automatically | `bootc-fetch-apply-updates.service.d/10-emryk.conf` |
-| CVEs in installed packages | Every CI build scans the image's SBOM with Grype; **critical-severity findings block the build and the publish**, high/medium/low are reported in the job summary. Findings already fixed upstream and awaiting the next base bump are waived in `.grype.yaml` with a dated reason | `.github/workflows/build.yml`, `.grype.yaml` |
-| CI supply-chain compromise (moving-tag GitHub Actions, untrusted dependencies pulled at build time) | Every action and base image is SHA/digest-pinned; `tailscale.repo` is vendored; Renovate opens PRs to keep pins current so the audit is continuous, not point-in-time | `.github/workflows/*.yml`, `build_files/tailscale.repo`, `renovate.json` |
-| Signing-key compromise | Annual scheduled rotation + on-incident rotation, with a graceful transition window | [KEY-POLICY.md](./KEY-POLICY.md) |
-| Process escape via kernel vulnerability or misbehaving container | SELinux **enforcing**, targeted policy; explicitly declared in the image | `/etc/selinux/config` |
-| Unpatched system flatpaks (Firefox, etc.) sitting between user actions | `flatpak-system-update.timer` enabled in the image; auto-updates daily | `build_files/build.sh` |
-| Silent privilege escalation via inherited sudoers (e.g., a future upstream NOPASSWD default) | `wheel` group requires password for sudo, asserted at the image layer via a 99-prefixed drop-in | `/etc/sudoers.d/99-emryk-wheel` |
+| Registry substitution | Digest-addressed cosign signing and host-side `sigstoreSigned` verification for the Emryk namespace | Hosts installed before recovery-key bootstrap require manual recovery if the active signer is compromised |
+| Base images and CI dependencies | Container bases, BIB, and Actions are digest/full-SHA pinned; Renovate proposes updates | A reviewed pin can still identify vulnerable or malicious upstream content |
+| Tailscale packages | Repository configuration and OpenPGP key are vendored; DNF uses a local `file://` key; weekly drift checks compare both | The build still downloads RPMs and metadata from Tailscale's HTTPS repository; its signing-key custody remains upstream trust |
+| Vulnerability gate | Grype blocks unwaived critical findings in the RPM-derived SBOM; waivers are reviewed and dated | Severity data and distro matching can be incomplete; non-RPM/configuration defects are not covered by this scan |
+| Executable payload | Build guard rejects unowned executable files except exact reviewed paths and documented generated base artifacts | `/usr/libexec/emryk/install-flatpaks.sh` and `update-nudge.sh` are source-controlled exceptions; configuration outside scanned payload directories is not an RPM component |
+| Boot assurance | Both exact staged digests must reach multi-user console login and pass policy, unit, firewall, SSH, SELinux, and variant assertions in a hosted VM | Hosted runners provide no physical NVIDIA device; runtime driver/GPU behavior needs the hardware canary |
+| SSH | Shipped effective configuration disables root, password, empty-password, and keyboard-interactive login | Console access, administrator drop-ins, cloud provisioning, or later local changes can alter access |
+| Firewall | Shipped `public` zone omits SSH and Cockpit; `tailscale0` is assigned to an accepting zone | Existing NetworkManager profiles and administrator changes may select other zones; the Tailscale zone intentionally exposes locally bound services to tailnet peers |
+| SELinux | Persistent configuration requests enforcing mode and VM smoke asserts `getenforce` | Local administrators and kernel command-line changes can disable or relax enforcement |
+| Containers | Rootless user socket enabled; rootful system socket not enabled | Rootless operation does not eliminate kernel, runtime, user-namespace, device, or user-account privilege risks |
+| Updates | Timer fetches and stages verified deployments without rebooting | A compromised trusted signer or authorized build path can publish a signed bad update; delayed operator reboot delays fixes |
+| OpenCode | Slash commands require trusted commenter and PR author associations, a same-repository PR, and immutable head SHA before checkout/API-key exposure | OpenCode executes repository content and is not a security sandbox; maintainer authorization is the trust boundary |
 
-## Threat model — what this image does NOT protect against
+## Variant boundary
 
-Below are deliberately out of scope for the base image. Customers running production-sensitive workloads must layer additional controls.
+The shared build layer contains no NVIDIA package or module policy. The NVIDIA
+stage alone installs the akmods payload and nouveau blacklist. The Intel smoke
+leg fails if NVIDIA module metadata, toolkit/driver packages, or the blacklist
+are present. The NVIDIA leg checks kernel/module version coupling at build time
+and module/toolkit/CDI metadata at boot. Physical checks are defined in
+[docs/hardware-canary.md](docs/hardware-canary.md).
 
-- **Per-workload isolation of ML jobs.** A malicious training script, model weight, or notebook can read everything the user can read and write everything the user can write. If you run untrusted code, run it in a constrained Distrobox / podman container with explicit volume mounts only — not as your interactive user.
-- **Full-disk encryption.** LUKS is the installer's decision, not the image's. We do not currently ship an installer that enforces LUKS-on-root. If you require encryption at rest, configure it at install time and verify after.
-- **Data-at-rest secret management.** Secrets in `/home`, `/var`, or distrobox container storage are protected only by the filesystem permissions you give them and (if you chose it) by LUKS. The image provides no key-management or vaulting layer.
-- **Tailnet-side trust.** The `tailscale` firewalld zone is `target=ACCEPT` — every machine on your tailnet is treated as fully trusted for this host's management plane. If you share a tailnet with untrusted peers, this assumption breaks.
-- **GPU compute-side attacks.** Vulnerabilities in the NVIDIA driver stack or in GPU compute isolation (between processes sharing a GPU) are not mitigated here. Track upstream NVIDIA advisories.
-- **Side-channel attacks on shared hosting infrastructure.** If this image runs on hardware shared with untrusted tenants, microarchitectural side channels (Spectre-family, etc.) are not addressed in this image.
-- **Anti-virus / anti-malware on Linux endpoints.** Intentionally out of scope — see `SECURITY-TODO.md` §"Deliberately out of scope". Not a signal-to-noise win on a workstation Linux platform.
-- **Customer-supplied software.** This image ships a base + curated tooling. Anything installed via `dnf`, distrobox, flatpak, or container pull after first boot is the customer's responsibility — including any third-party container images run through the rootless recipes under [`docs/recipes/`](./docs/recipes/).
+## Signing compromise and recovery
 
-## Reporting a vulnerability
+The intended steady-state trust set contains the active signer and a permanently
+trusted offline recovery signer in one `keyPaths` array. Multiple separate
+policy requirements are cumulative and therefore must not be used to express
+alternatives. Planned rotation requires observed successful boots of the
+transition image across the managed fleet; elapsed time or staging status is
+not evidence. Incident recovery uses only the offline recovery signer to ship
+an image that removes the compromised active key and introduces a fresh one.
 
-We accept reports through two channels — please use whichever is more convenient. Either way, **do not** open a public GitHub issue for security-sensitive findings.
+The recovery public key is not yet committed, so this steady state is not yet
+in force. See [KEY-POLICY.md](KEY-POLICY.md) and the P0 entry in
+[SECURITY-TODO.md](SECURITY-TODO.md). Private keys and passphrases must never be
+placed in the repository, workspace, GitHub artifacts, or issue content.
 
-1. **GitHub Private Vulnerability Reporting** — visit https://github.com/rhuze-emryk/emryk-ml/security/advisories/new and file a private advisory. This is the preferred channel for researchers with GitHub accounts.
-2. **Email** — `security@emryk.com`. PGP key fingerprint will be published here if and when one exists; until then, treat email as in-band and avoid exfil-style proof-of-concept content in the initial report.
+## Vulnerability reporting
 
-When reporting, please include:
+Report suspected vulnerabilities through GitHub Private Vulnerability
+Reporting for this repository or email `security@emryk.com`. Include affected
+digests, reproduction details, and impact when possible; do not include private
+keys, credentials, or customer data.
 
-- A description of the issue and its impact.
-- Steps to reproduce, or a proof-of-concept.
-- The image tag and digest you observed the issue on (`bootc status` shows both).
-- Whether you've disclosed this elsewhere.
-
-## Triage and remediation SLAs
-
-These are commitments, not guarantees — best-effort with the caveats below.
-
-| Severity | Triage acknowledgement | Fix or mitigation shipped |
-|---|---|---|
-| **Critical** (remote code execution, signature bypass, privilege escalation from network) | ≤ 7 days | ≤ 90 days |
-| **High** (privilege escalation requiring local foothold, persistent data exposure) | ≤ 7 days | ≤ 90 days |
-| **Medium / Low** | ≤ 14 days | Best effort, next regular release |
-
-Caveats:
-
-- "Shipped" means a build is published to GHCR and the auto-update timer will deliver it. Customer hosts pull updates within ~24h of publication and apply on next reboot.
-- Issues in upstream components (Fedora packages, NVIDIA driver, Universal Blue base) follow their respective vendor timelines. We update our base pin to pick up upstream fixes as soon as they're available.
-
-## Coordinated disclosure
-
-We follow coordinated-disclosure norms:
-
-- **90-day window** from the date of acknowledged triage to public disclosure, with the timeline extendable by mutual agreement between Emryk and the reporter.
-- The 90-day clock continues to run even if a fix has not yet shipped. If a fix is not ready by day 90, we coordinate on disclosure language with the reporter.
-- We will publicly credit reporters who request it. Reporters who prefer anonymity will be credited as "an external researcher" or per their preferred handle.
-- If a vulnerability is being actively exploited in the wild, the 90-day clock collapses — we accelerate disclosure and ship mitigations as fast as possible.
-
-## Supply chain trust
-
-Three independent trust signals are attached to every published image:
-
-1. **Cosign signature** — proves the image was signed by our long-lived key. Required for `bootc` pulls to succeed (`/etc/containers/policy.json` enforces this on installed hosts). Key lifecycle is governed by [KEY-POLICY.md](./KEY-POLICY.md): annual scheduled rotation + on-incident, graceful transition procedure, and a roadmap to Sigstore keyless signing.
-2. **SLSA build provenance** — Sigstore-signed (via the workflow's short-lived OIDC token, no secret to leak) attestation that the image was built from this repo at a specific commit, by a specific workflow. Verifiable with `gh attestation verify oci://... --repo rhuze-emryk/emryk-ml`.
-3. **CycloneDX SBOM** — package manifest generated by [syft](https://github.com/anchore/syft) from the image's RPM database, attached as a Sigstore-signed attestation. Verifiable with the same `gh attestation verify` command plus `--predicate-type https://cyclonedx.org/bom`. Scope is RPM-installed packages only (every third-party payload in our build flow is installed via `dnf` — see `build_files/build.sh`); manually-installed binaries would not appear. This coverage assumption is mechanically enforced at build time by `build_files/verify-payload-rpm-owned.sh`, which walks executable-payload directories and fails the build on any non-allowlisted unowned file. If a future change ever requires a non-RPM payload, the guard surfaces it in PR review so the team explicitly decides whether to allowlist it or move the SBOM to a full-image cataloger.
-
-Any one of these signals can be verified independently of the others. See the "Provenance and SBOM" section of [README.md](./README.md) for the verification recipes.
-
-**Build-time package integrity.** Every third-party DNF repository vendored into the build (`build_files/*.repo`) enforces `gpgcheck=1`, so each RPM's own GPG signature — not just the repository metadata (`repo_gpgcheck=1`) — is verified at install time. A package that is unsigned or signed with an untrusted key fails the build rather than landing silently. The NVIDIA Container Toolkit is installed by the upstream akmods base layer, which likewise verifies signatures (`gpgcheck=1` on its own toolkit repo) before our build runs.
-
-**Vulnerability gating.** The SBOM is scanned with Grype on every build. Critical-severity findings fail the build and are not published; high/medium/low findings are reported in the workflow job summary. A finding is waived only via a reviewed, dated entry in `.grype.yaml` — typically a short-dated waiver for a CVE already fixed upstream that the digest-pinned base hasn't picked up yet, cleared at the next base bump. The published SBOM records the image's distro, so the same `grype sbom:<downloaded-sbom>` scan reproduces our results. Scope follows the SBOM: RPM-installed packages.
+Emryk aims to acknowledge critical/high-impact reports within seven days and
+coordinate a fix and disclosure according to impact. That is an operational
+target, not a warranty. Public disclosure before a fix should be coordinated
+when active exploitation would put users at risk.

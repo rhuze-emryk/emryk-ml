@@ -1,0 +1,65 @@
+#!/bin/bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$repo_root"
+
+workflow_dir=.github/workflows
+
+moving_runner='ubuntu-''latest'
+if rg -n "runs-on:[[:space:]]+${moving_runner}" "$workflow_dir"; then
+    echo >&2 'A workflow still uses a moving Ubuntu runner label.'
+    exit 1
+fi
+
+while IFS= read -r uses_line; do
+    action_ref=${uses_line##*@}
+    action_ref=${action_ref%%[[:space:]#]*}
+    [[ $action_ref =~ ^[0-9a-f]{40}$ ]] || {
+        echo >&2 "GitHub Action is not pinned by full SHA: $uses_line"
+        exit 1
+    }
+done < <(rg --no-filename '^\s*uses:[[:space:]]+[^./][^@]*@' "$workflow_dir")
+
+disk_workflow=$workflow_dir/build-disk.yml
+grep -Fq 'variant:' "$disk_workflow"
+grep -Fq 'source-tag:' "$disk_workflow"
+unsupported_arch='arm''64'
+if grep -Eq "^[[:space:]]+platform:|${unsupported_arch}|ubuntu-24\\.04-arm" "$disk_workflow"; then
+    echo >&2 'Disk workflow still exposes a platform/ARM path.'
+    exit 1
+fi
+grep -Eq 'BIB_IMAGE: .*@sha256:[0-9a-f]{64}$' "$disk_workflow"
+
+build_workflow=$workflow_dir/build.yml
+grep -Fq 'GRYPE_VERSION: "v0.116.1"' "$build_workflow"
+grep -Fq 'SYFT_VERSION: "v1.50.0"' "$build_workflow"
+grep -Fq 'docker/login-action@dbcb813823bdd20940b903addbd779551569679f' \
+    "$build_workflow"
+grep -Fq "cosign-release: 'v3.0.6'" "$build_workflow"
+grep -Fq 'actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d' \
+    "$build_workflow"
+grep -Fq 'needs: [build_scan, boot_smoke]' "$build_workflow"
+# shellcheck disable=SC2016
+grep -Fq 'COSIGN_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}' "$build_workflow"
+
+sign_line=$(grep -n -- '- name: Sign immutable staged digest' "$build_workflow" | cut -d: -f1)
+verify_line=$(grep -n -- '- name: Verify signature with expected active key' "$build_workflow" | cut -d: -f1)
+promote_line=$(grep -n -- '- name: Promote verified digest to release tags' "$build_workflow" | cut -d: -f1)
+(( sign_line < verify_line && verify_line < promote_line ))
+
+opencode_workflow=$workflow_dir/opencode.yml
+[[ $(grep -Fc 'OPENAI_API_KEY:' "$opencode_workflow") -eq 1 ]]
+grep -Fq 'needs: authorize' "$opencode_workflow"
+grep -Fq "if: needs.authorize.outputs.authorized == 'true'" "$opencode_workflow"
+grep -Fq 'Fork pull requests are not authorized' "$opencode_workflow"
+grep -Fq 'OWNER|MEMBER|COLLABORATOR' "$opencode_workflow"
+
+host_specific_re='ani''as|glue''tun|torrent-''jail'
+if rg -n -i "$host_specific_re" "$workflow_dir/monday-cockpit.yml"; then
+    echo >&2 'Repository cockpit still contains host-specific monitoring.'
+    exit 1
+fi
+
+[[ ! -e package-lock.json ]]
+echo 'workflow policy tests passed'

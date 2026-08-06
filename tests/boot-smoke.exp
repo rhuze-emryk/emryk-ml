@@ -1,0 +1,78 @@
+#!/usr/bin/expect -f
+
+if {$argc != 5} {
+    puts stderr "usage: boot-smoke.exp DISK OVMF_VARS PASSWORD VARIANT EXPECTED_SOURCE"
+    exit 2
+}
+
+set disk [lindex $argv 0]
+set ovmf_vars [lindex $argv 1]
+set password [lindex $argv 2]
+set variant [lindex $argv 3]
+set expected_source [lindex $argv 4]
+set guest_script [file join [file dirname [info script]] boot-smoke-guest.sh]
+set guest_payload [exec base64 -w0 $guest_script]
+set timeout 1200
+
+if {![info exists env(SERIAL_LOG)]} {
+    puts stderr "SERIAL_LOG is required"
+    exit 2
+}
+log_file -a $env(SERIAL_LOG)
+
+spawn qemu-system-x86_64 \
+    -machine q35,accel=kvm \
+    -cpu host \
+    -smp 2 \
+    -m 4096 \
+    -nographic \
+    -no-reboot \
+    -device virtio-rng-pci \
+    -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+    -drive if=pflash,format=raw,file=$ovmf_vars \
+    -drive if=virtio,format=qcow2,file=$disk \
+    -netdev user,id=network0 \
+    -device virtio-net-pci,netdev=network0
+
+expect {
+    -re {login:[[:space:]]*$} {}
+    timeout {
+        puts stderr "timed out waiting for the serial login prompt"
+        exit 124
+    }
+    eof {
+        puts stderr "VM exited before presenting a serial login prompt"
+        exit 1
+    }
+}
+send -- "ci-smoke\r"
+expect -re {Password:[[:space:]]*$}
+send -- "$password\r"
+expect -re {[$#][[:space:]]*$}
+
+send -- "printf '%s' '$guest_payload' | base64 -d > /tmp/emryk-boot-smoke.sh\r"
+expect -re {[$#][[:space:]]*$}
+send -- "sudo -S bash /tmp/emryk-boot-smoke.sh '$expected_source' '$variant'\r"
+expect {
+    -re {\[sudo\] password for ci-smoke:[[:space:]]*$} {
+        send -- "$password\r"
+        exp_continue
+    }
+    -re {EMRYK_SMOKE_OK} {}
+    -re {EMRYK_SMOKE_FAILED:([0-9]+)} {
+        puts stderr "guest smoke checks failed"
+        exit 1
+    }
+    timeout {
+        puts stderr "timed out waiting for guest smoke checks"
+        exit 124
+    }
+    eof {
+        puts stderr "VM exited during guest smoke checks"
+        exit 1
+    }
+}
+
+expect -re {[$#][[:space:]]*$}
+send -- "sudo systemctl poweroff\r"
+expect eof

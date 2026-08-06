@@ -1,0 +1,22 @@
+{
+  "customizations": {
+    "user": [
+      {
+        "name": "ci-smoke",
+        "password": "__GENERATED_AT_RUNTIME__",
+        "groups": [
+          "wheel"
+        ]
+      }
+    ],
+    "kernel": {
+      "append": "console=ttyS0,115200n8 systemd.mask=emryk-install-flatpaks.service"
+    },
+    "filesystem": [
+      {
+        "mountpoint": "/",
+        "minsize": "20 GiB"
+      }
+    ]
+  }
+}

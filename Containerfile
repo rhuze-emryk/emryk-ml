@@ -1,7 +1,8 @@
 FROM scratch AS ctx
 COPY build_files /
-# Public cosign key — build.sh drops a copy at /etc/pki/containers/ for
-# runtime signature verification of future pulls (SECURITY-TODO #2).
+# Active cosign public key. build.sh installs it for runtime verification of
+# future pulls. The offline recovery public key is installed alongside it once
+# recovery-cosign.pub has been supplied by the offline key custodian.
 COPY cosign.pub /cosign.pub
 
 # Base images are pinned by digest so an upstream tag rewrite cannot silently
@@ -15,10 +16,9 @@ FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:6eebf2447d5350d07ebbb99bf402f96
 # intel: laptop/iGPU variant (published as emryk-ml-intel). Same payload and
 # hardening as the NVIDIA image minus the driver stack — Intel iGPUs (mesa)
 # and Secure Boot work with what the base already ships, no out-of-tree
-# kmods. build.sh is shared verbatim: its one NVIDIA-ism, the nouveau
-# blacklist, is a no-op on hardware with no NVIDIA GPU. Built with
-# `--target intel`; the NVIDIA stage below stays last so it remains the
-# default build target.
+# kmods. The shared build payload contains no NVIDIA packages or module
+# configuration. Built with `--target intel`; the NVIDIA stage below stays
+# last so it remains the default build target.
 # ---------------------------------------------------------------------------
 FROM kinoite AS intel
 
@@ -28,7 +28,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
     /ctx/build.sh
 
-# SECURITY-TODO #3/#8: every payload file must be RPM-owned so the
+# Every executable payload file must be RPM-owned so the
 # RPM-only SBOM (build.yml syft step) captures it. Fails the build on
 # any unowned file outside the script's allowlist.
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
@@ -60,13 +60,20 @@ RUN --mount=type=bind,from=akmods,source=/rpms,target=/tmp/akmods-rpms \
     --mount=type=cache,dst=/var/log \
     IMAGE_NAME=kinoite MULTILIB=0 bash /tmp/akmods-rpms/ublue-os/nvidia-install.sh
 
+# nouveau must not claim the GPU before the NVIDIA driver. Keep this file in
+# the NVIDIA stage: the Intel image must contain neither this blacklist nor
+# any package from the NVIDIA akmods payload.
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    install -D -m 0644 /ctx/modprobe.d/blacklist-nouveau.conf \
+    /usr/lib/modprobe.d/blacklist-nouveau.conf
+
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
     --mount=type=tmpfs,dst=/tmp \
     /ctx/build.sh
 
-# SECURITY-TODO #3/#8: every payload file must be RPM-owned so the
+# Every executable payload file must be RPM-owned so the
 # RPM-only SBOM (build.yml syft step) captures it. Fails the build on
 # any unowned file outside the script's allowlist.
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \

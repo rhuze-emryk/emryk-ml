@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh the staged-update login nudge (/run/motd.d)
+Documentation=https://github.com/rhuze-emryk/emryk-ml/blob/main/UPDATING.md
+After=bootc-fetch-apply-updates.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/emryk/update-nudge.sh

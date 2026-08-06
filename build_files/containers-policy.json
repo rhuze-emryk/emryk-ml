@@ -9,7 +9,9 @@
             "ghcr.io/rhuze-emryk": [
                 {
                     "type": "sigstoreSigned",
-                    "keyPath": "/etc/pki/containers/rhuze-emryk.pub",
+                    "keyPaths": [
+                        "/etc/pki/containers/rhuze-emryk.pub"
+                    ],
                     "signedIdentity": {
                         "type": "matchRepository"
                     }

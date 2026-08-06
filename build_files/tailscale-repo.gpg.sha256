@@ -1,0 +1,6 @@
+# SHA-256 of the exact upstream bytes at
+# https://pkgs.tailscale.com/stable/fedora/repo.gpg
+53c6f7dfbd774839d9f37e6c5022ba952108aba9a0e556a56f292a9eb605d7cf  repo.gpg
+
+# Primary OpenPGP fingerprint (checked with gpg --show-keys --with-colons):
+# 2596 A99E AAB3 3821 893C 0A79 458C A832 957F 5868

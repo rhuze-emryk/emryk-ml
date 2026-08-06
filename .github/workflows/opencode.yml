@@ -1,0 +1,116 @@
+name: OpenCode maintainer command
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: opencode-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Authorize maintainer command
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      authorized: ${{ steps.gate.outputs.authorized }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+
+    steps:
+      - name: Check command, commenter, PR author, and fork status
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo 'authorized=false' >> "$GITHUB_OUTPUT"
+
+          body=$(jq -r '.comment.body // ""' "$GITHUB_EVENT_PATH")
+          if ! grep -Eq '^[[:space:]]*/(oc|opencode)([[:space:]]|$)' <<<"$body"; then
+            echo 'No leading /oc or /opencode command; ignoring.'
+            exit 0
+          fi
+
+          commenter_association=$(jq -r '.comment.author_association // "NONE"' \
+            "$GITHUB_EVENT_PATH")
+          case "$commenter_association" in
+            OWNER|MEMBER|COLLABORATOR) ;;
+            *)
+              echo "Commenter association '$commenter_association' is not trusted."
+              exit 0
+              ;;
+          esac
+
+          event_name=$GITHUB_EVENT_NAME
+          if [[ $event_name == issue_comment ]]; then
+            pr_number=$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")
+            [[ $(jq -r '.issue.pull_request.url // ""' "$GITHUB_EVENT_PATH") ]] || {
+              echo 'Slash commands are accepted only on pull requests.'
+              exit 0
+            }
+          else
+            pr_number=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
+          fi
+
+          pr=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}")
+          head_repo=$(jq -r '.head.repo.full_name // ""' <<<"$pr")
+          base_repo=$(jq -r '.base.repo.full_name // ""' <<<"$pr")
+          if [[ -z $head_repo || $head_repo != "$base_repo" ]]; then
+            echo 'Fork pull requests are not authorized to invoke OpenCode.'
+            exit 0
+          fi
+
+          author_association=$(jq -r '.author_association // "NONE"' <<<"$pr")
+          case "$author_association" in
+            OWNER|MEMBER|COLLABORATOR) ;;
+            *)
+              echo "PR author association '$author_association' is not trusted."
+              exit 0
+              ;;
+          esac
+
+          head_sha=$(jq -r '.head.sha' <<<"$pr")
+          [[ $head_sha =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'Could not resolve an immutable PR head SHA.'
+            exit 1
+          }
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo 'authorized=true' >> "$GITHUB_OUTPUT"
+
+  opencode:
+    name: Run authorized OpenCode command
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      # Required by the pinned OpenCode action for its provider exchange.
+      id-token: write
+
+    steps:
+      - name: Checkout authorized same-repository PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.authorize.outputs.head_sha }}
+          persist-credentials: false
+
+      # OpenCode executes repository content; it is not a security sandbox.
+      # The API key is scoped to this final step after both trust gates pass.
+      - name: Run OpenCode
+        uses: anomalyco/opencode/github@b8bd88901a4870ef3a5752840f4e23e11d54e24e # reviewed dev pin, 2026-08-05
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        with:
+          model: openai/gpt-5.6-sol

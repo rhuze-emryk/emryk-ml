@@ -1,15 +1,7 @@
-name: Vendored repo drift watch
-
-# Watches the upstream URLs that our vendored .repo files came from. If any of
-# them drift, opens (or updates) a GitHub issue with the diff so a human can
-# decide whether to refresh the vendor. This is the inverse of `curl`-piping
-# them at build time — it lets us pin baseurl + gpgkey in source while still
-# noticing when upstream moves.
+name: Vendored dependency drift watch
 
 on:
   schedule:
-    # Monday 13:00 UTC = 08:00 EST (winter) / 09:00 EDT (summer). Same day
-    # as Renovate so the maintainer sees all drift signals together.
     - cron: '0 13 * * MON'
   workflow_dispatch:
 
@@ -18,66 +10,107 @@ permissions:
   issues: write
 
 jobs:
-  drift-check:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: tailscale
-            vendored: build_files/tailscale.repo
-            upstream: https://pkgs.tailscale.com/stable/fedora/tailscale.repo
+  tailscale:
+    name: Check Tailscale repository and signing key
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      REPO_URL: https://pkgs.tailscale.com/stable/fedora/tailscale.repo
+      KEY_URL: https://pkgs.tailscale.com/stable/fedora/repo.gpg
+      EXPECTED_FINGERPRINT: 2596A99EAAB33821893C0A79458CA832957F5868
+
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Fetch upstream
-        run: curl -fsSL "${{ matrix.upstream }}" -o /tmp/upstream.repo
-
-      - name: Compare against vendored copy
-        id: diff
-        env:
-          VENDORED: ${{ matrix.vendored }}
+      - name: Compare repository configuration
+        id: repo
         run: |
-          if diff -u "${VENDORED}" /tmp/upstream.repo > /tmp/drift.patch; then
-            echo "drifted=false" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          curl -fsSL "$REPO_URL" --output /tmp/tailscale.repo
+          # The vendored copy deliberately points at the local key. Normalize
+          # only that reviewed deviation before comparing every other byte.
+          sed -i 's#^gpgkey=.*#gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-tailscale#' \
+            /tmp/tailscale.repo
+          if diff -u build_files/tailscale.repo /tmp/tailscale.repo \
+            > /tmp/tailscale-repo.patch; then
+            echo 'drifted=false' >> "$GITHUB_OUTPUT"
           else
-            echo "drifted=true" >> "$GITHUB_OUTPUT"
+            echo 'drifted=true' >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Open or update drift issue
-        if: steps.diff.outputs.drifted == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MATRIX_NAME: ${{ matrix.name }}
-          MATRIX_VENDORED: ${{ matrix.vendored }}
-          MATRIX_UPSTREAM: ${{ matrix.upstream }}
+      - name: Compare signing key
+        id: key
         run: |
-          title="${MATRIX_NAME}.repo drifted from upstream"
+          set -euo pipefail
+          curl -fsSL "$KEY_URL" --output /tmp/tailscale-repo.gpg
+          expected_hash=$(awk '!/^#/ && NF >= 2 {print $1; exit}' \
+            build_files/tailscale-repo.gpg.sha256)
+          actual_hash=$(sha256sum /tmp/tailscale-repo.gpg | awk '{print $1}')
+          actual_fingerprint=$(gpg --batch --show-keys --with-colons \
+            /tmp/tailscale-repo.gpg | awk -F: '$1 == "fpr" {print $10; exit}')
 
           {
-            echo "Upstream \`${MATRIX_NAME}.repo\` has drifted from the vendored copy at \`${MATRIX_VENDORED}\`."
-            echo
-            echo "Upstream URL: ${MATRIX_UPSTREAM}"
+            echo "expected_hash=$expected_hash"
+            echo "actual_hash=$actual_hash"
+            echo "actual_fingerprint=$actual_fingerprint"
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ $actual_hash == "$expected_hash" \
+            && $actual_fingerprint == "$EXPECTED_FINGERPRINT" ]]; then
+            echo 'drifted=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'drifted=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update repository drift issue
+        if: steps.repo.outputs.drifted == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title='Tailscale repository configuration drifted from upstream'
+          {
+            echo 'The upstream Tailscale Fedora repository configuration differs from the reviewed copy.'
             echo
             echo '```diff'
-            cat /tmp/drift.patch
+            cat /tmp/tailscale-repo.patch
             echo '```'
             echo
-            echo "To refresh the vendor:"
-            echo
-            echo '```bash'
-            echo "curl -fsSL ${MATRIX_UPSTREAM} -o ${MATRIX_VENDORED}"
-            echo '```'
-            echo
-            echo "…then review the diff and open a PR. The new contents take effect on the next build."
-          } > /tmp/issue-body.md
-
-          existing=$(gh issue list --search "in:title \"${title}\"" --state open --json number --jq '.[0].number // ""')
-
-          if [ -n "${existing}" ]; then
-            gh issue edit "${existing}" --body-file /tmp/issue-body.md
-            echo "Updated existing issue #${existing}"
+            echo 'Review the upstream change and update the vendored file in a pull request. Preserve the local file:// signing-key reference.'
+          } > /tmp/repo-issue.md
+          existing=$(gh issue list --state open --search "in:title \"$title\"" \
+            --json number --jq '.[0].number // ""')
+          if [[ -n $existing ]]; then
+            gh issue edit "$existing" --body-file /tmp/repo-issue.md
           else
-            gh issue create --title "${title}" --body-file /tmp/issue-body.md
+            gh issue create --title "$title" --body-file /tmp/repo-issue.md
+          fi
+
+      - name: Open or update signing-key security review
+        if: steps.key.outputs.drifted == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HASH: ${{ steps.key.outputs.expected_hash }}
+          ACTUAL_HASH: ${{ steps.key.outputs.actual_hash }}
+          ACTUAL_FINGERPRINT: ${{ steps.key.outputs.actual_fingerprint }}
+        run: |
+          set -euo pipefail
+          title='SECURITY REVIEW: Tailscale repository signing key changed'
+          {
+            echo 'The upstream Tailscale Fedora signing key no longer matches the reviewed key material.'
+            echo
+            echo "- expected SHA-256: \`$EXPECTED_HASH\`"
+            echo "- observed SHA-256: \`$ACTUAL_HASH\`"
+            echo "- expected primary fingerprint: \`$EXPECTED_FINGERPRINT\`"
+            echo "- observed primary fingerprint: \`$ACTUAL_FINGERPRINT\`"
+            echo
+            echo '**Do not update the key automatically.** Confirm the rotation through an independent Tailscale channel, review the new fingerprint, and land the new public key plus recorded hash in a security-reviewed pull request.'
+          } > /tmp/key-issue.md
+          existing=$(gh issue list --state open --search "in:title \"$title\"" \
+            --json number --jq '.[0].number // ""')
+          if [[ -n $existing ]]; then
+            gh issue edit "$existing" --body-file /tmp/key-issue.md
+          else
+            gh issue create --title "$title" --body-file /tmp/key-issue.md
           fi

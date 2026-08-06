@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodically refresh the staged-update login nudge
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

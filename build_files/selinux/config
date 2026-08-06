@@ -1,4 +1,4 @@
-# SECURITY-TODO #15: SELinux is explicitly enforced in this image rather
+# SELinux is explicitly enforced in this image rather
 # than inherited from Fedora's default. This guarantees that an upstream
 # package change cannot silently relax SELinux, and gives the audit trail
 # a single place to look.

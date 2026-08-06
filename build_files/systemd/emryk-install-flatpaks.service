@@ -1,0 +1,14 @@
+[Unit]
+Description=Install Emryk default system flatpaks
+After=network-online.target flatpak-system-helper.service
+Wants=network-online.target flatpak-system-helper.service
+ConditionPathExists=!/var/lib/emryk/.flatpaks-installed
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/emryk/install-flatpaks.sh
+RemainAfterExit=yes
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target
