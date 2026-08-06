@@ -6,6 +6,8 @@ A managed [bootc](https://github.com/bootc-dev/bootc) image for cloud ML worksta
 
 This is the public image foundation for the [Emryk Workstation](https://emryk.com) product. It publishes to `ghcr.io/rhuze-emryk/emryk-ml` weekly (the Monday build), or on demand via **Run workflow**; every push to `main` is built and tested but does not move the registry.
 
+A second variant, `ghcr.io/rhuze-emryk/emryk-ml-intel`, carries the same payload and hardening **without the NVIDIA driver stack** — for Intel iGPU laptops and workstations (mesa covers the GPU; no out-of-tree kernel modules, so Secure Boot works with no key enrollment). Both variants build from the same Containerfile (named stages `nvidia` and `intel`) and publish together on the same weekly cadence.
+
 ## What's included
 
 **Base:** `ghcr.io/ublue-os/kinoite-main:latest` — stock Fedora Kinoite with UBlue's RPMFusion, hardware quirk fixes, and `bootc` integration.
@@ -38,14 +40,15 @@ This is the public image foundation for the [Emryk Workstation](https://emryk.co
 From any bootc system:
 
 ```bash
-sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml:latest
+sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml:latest        # NVIDIA workstation
+sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml-intel:latest  # Intel iGPU laptop
 ```
 
 Reboot to apply.
 
-### A single image
+### One tag per variant
 
-Emryk ML ships as **one image** — `:latest`. Roll forward with `bootc upgrade`; roll back to the previous deployment with `sudo bootc rollback`. `/var` and `/home` are preserved across deployments.
+Each variant ships a single moving tag — `:latest`. Roll forward with `bootc upgrade`; roll back to the previous deployment with `sudo bootc rollback`. `/var` and `/home` are preserved across deployments.
 
 ### Optional recipes
 
