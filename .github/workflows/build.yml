@@ -293,7 +293,13 @@ jobs:
           }
           trap cleanup EXIT
 
-          buildah run "$container" -- sshd -T >/dev/null
+          # Fedora generates host keys on first boot, so an unbooted image
+          # correctly has none. Give sshd an ephemeral key in this disposable
+          # validation container so -T can reach and parse the shipped config.
+          buildah run "$container" -- ssh-keygen -q -t ed25519 -N '' \
+            -f /tmp/emryk-ci-hostkey
+          buildah run "$container" -- sshd -T \
+            -h /tmp/emryk-ci-hostkey >/dev/null
           buildah run "$container" -- jq empty /etc/containers/policy.json
           buildah run "$container" -- systemd-analyze verify \
             /etc/systemd/system/emryk-install-flatpaks.service \

@@ -42,6 +42,9 @@ grep -Fq 'actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d' \
 grep -Fq 'needs: [build_scan, boot_smoke]' "$build_workflow"
 # shellcheck disable=SC2016
 grep -Fq 'COSIGN_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}' "$build_workflow"
+grep -Fq "ssh-keygen -q -t ed25519 -N ''" "$build_workflow"
+grep -Fq "sshd -T \\" "$build_workflow"
+grep -Fq -- '-h /tmp/emryk-ci-hostkey' "$build_workflow"
 
 sign_line=$(grep -n -- '- name: Sign immutable staged digest' "$build_workflow" | cut -d: -f1)
 verify_line=$(grep -n -- '- name: Verify signature with expected active key' "$build_workflow" | cut -d: -f1)
