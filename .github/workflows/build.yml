@@ -582,7 +582,7 @@ jobs:
         id: bib
         uses: osbuild/bootc-image-builder-action@31d72f795564fb09943f0705025e75748da3a2d1 # main as of 2026-05-04
         with:
-          builder-image: quay.io/centos-bootc/bootc-image-builder:latest@sha256:a252314df9c7cdd11e49dc0e355d9ccfe83c06c7ae9e1db798f9f00131786c12
+          builder-image: quay.io/centos-bootc/bootc-image-builder:latest@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b
           config-file: /tmp/boot-smoke-config.json
           image: ${{ env.SOURCE_IMAGE }}
           chown: ${{ steps.owner.outputs.uid }}:${{ steps.owner.outputs.gid }}

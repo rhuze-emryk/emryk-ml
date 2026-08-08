@@ -1,6 +1,6 @@
 export image_name := env("IMAGE_NAME", "emryk-ml")
 export default_tag := env("DEFAULT_TAG", "latest")
-export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest@sha256:a252314df9c7cdd11e49dc0e355d9ccfe83c06c7ae9e1db798f9f00131786c12")
+export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b")
 
 [private]
 default:
