@@ -93,7 +93,7 @@ jobs:
         uses: osbuild/bootc-image-builder-action@31d72f795564fb09943f0705025e75748da3a2d1 # main as of 2026-05-04
         with:
           builder-image: ${{ env.BIB_IMAGE }}
-          config-file: disk_config/disk.toml
+          config-file: ${{ github.workspace }}/disk_config/disk.toml
           image: ${{ steps.source.outputs.image }}
           chown: ${{ steps.owner.outputs.uid }}:${{ steps.owner.outputs.gid }}
           types: qcow2
