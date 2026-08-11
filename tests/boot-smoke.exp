@@ -12,7 +12,10 @@ set variant [lindex $argv 3]
 set expected_source [lindex $argv 4]
 set guest_script [file join [file dirname [info script]] boot-smoke-guest.sh]
 set guest_payload [exec base64 -w0 $guest_script]
-set timeout 1200
+# GitHub-hosted runners expose no /dev/kvm, so boot with QEMU software
+# emulation. Software emulation is far slower than KVM; the generous timeout
+# below (60 min) is the budget for the whole boot + guest checks.
+set timeout 3600
 
 if {![info exists env(SERIAL_LOG)]} {
     puts stderr "SERIAL_LOG is required"
@@ -21,8 +24,8 @@ if {![info exists env(SERIAL_LOG)]} {
 log_file -a $env(SERIAL_LOG)
 
 spawn qemu-system-x86_64 \
-    -machine q35,accel=kvm \
-    -cpu host \
+    -machine q35,accel=tcg \
+    -cpu max \
     -smp 2 \
     -m 4096 \
     -nographic \

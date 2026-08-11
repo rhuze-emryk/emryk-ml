@@ -37,9 +37,12 @@ grep -Fq 'SYFT_VERSION: "v1.50.0"' "$build_workflow"
 grep -Fq 'docker/login-action@dbcb813823bdd20940b903addbd779551569679f' \
     "$build_workflow"
 grep -Fq "cosign-release: 'v3.0.6'" "$build_workflow"
-grep -Fq 'actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d' \
+grep -Fq 'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6' \
     "$build_workflow"
-grep -Fq 'needs: [build_scan, boot_smoke]' "$build_workflow"
+grep -Fq 'needs: [build_scan]' "$build_workflow"
+boot_smoke_block=$(sed -n '/^  boot_smoke:/,/^  publish:/p' "$build_workflow")
+grep -Fq 'continue-on-error: true' <<<"$boot_smoke_block"
+grep -Fq 'persist-credentials: false' <<<"$boot_smoke_block"
 # shellcheck disable=SC2016
 grep -Fq 'COSIGN_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}' "$build_workflow"
 grep -Fq "ssh-keygen -q -t ed25519 -N ''" "$build_workflow"

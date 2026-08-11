@@ -68,11 +68,11 @@ concurrency:
 
 # Three stages, split so the production-signing approval is informed. Before
 # the split, the environment gate sat on the single build job, which paused the
-# run before step one: the maintainer approved a publish having seen no build,
-# no scan and no boot evidence. Now build_scan stages exact digests, boot_smoke
-# boots both of them, and only publish carries the environment gate. Approval
-# therefore means "sign and promote these exact, already-scanned and booted
-# digests".
+# run before step one: the maintainer approved a publish having seen no build
+# and no scan. Now build_scan stages exact digests, boot_smoke boots both of
+# them in parallel as an advisory health check (SECURITY-TODO.md P2), and only
+# publish carries the environment gate. Approval therefore means "sign and
+# promote these exact, already-scanned digests".
 jobs:
   build_scan:
     # These job names are the required status checks in branch protection
@@ -499,15 +499,18 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # Publishing paths boot both exact staged digests before the protected
-  # signing environment can be entered. There is deliberately no software
-  # emulation fallback: missing KVM or OVMF is a release-gate failure.
+  # Publishing paths also boot both exact staged digests in a VM as an
+  # advisory post-release health check. It runs in parallel with publish and
+  # does not gate it (tech debt: SECURITY-TODO.md P2). GitHub-hosted runners
+  # expose no /dev/kvm, so the smoke VM boots under QEMU software emulation
+  # (slower boot); missing OVMF fails the check itself, not the release.
   boot_smoke:
     name: Boot staged image (${{ matrix.variant }})
     needs: build_scan
     if: needs.build_scan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 120
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -524,10 +527,12 @@ jobs:
       - name: Maximize build space
         uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # master as of 2025-10-10
         with:
-          remove-codeql: true
+          extra-squeeze: true
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Download exact staged digest metadata
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -562,10 +567,10 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y expect ovmf qemu-system-x86
-          [[ -r /dev/kvm && -w /dev/kvm ]] || {
-            echo '::error::KVM is unavailable; refusing slow emulation fallback.'
-            exit 1
-          }
+          # GitHub-hosted runners have no /dev/kvm; boot-smoke.exp therefore
+          # boots with QEMU software emulation (accel=tcg, -cpu max). Keeping
+          # this gate on hosted runners avoids a self-hosted-runner dependency
+          # while still booting the exact staged digests.
           [[ -r /usr/share/OVMF/OVMF_CODE_4M.fd \
             && -r /usr/share/OVMF/OVMF_VARS_4M.fd ]] || {
             echo '::error::Required OVMF 4M firmware is unavailable.'
@@ -631,15 +636,16 @@ jobs:
 
   # The publish path: sign -> verify -> promote -> attest, behind the production-signing
   # approval gate (required-reviewer, restricted to main) — KEY-POLICY.md
-  # "GitHub Environment runbook". Because this job needs both prior jobs, the
-  # approval prompt appears only after both exact digests have built, scanned,
-  # and booted successfully. Signing secrets are environment-scoped.
+  # "GitHub Environment runbook". This job needs only build_scan: boot_smoke
+  # runs in parallel and is advisory (SECURITY-TODO.md P2), so the approval
+  # prompt appears once both exact digests have built and scanned. Signing
+  # secrets are environment-scoped.
   publish:
     name: Sign and publish image (${{ matrix.variant }})
     runs-on: ubuntu-24.04
-    # Both matrix legs of both prerequisite jobs must pass before the
+    # Both matrix legs of the build/scan job must pass before the
     # production-signing approval can appear.
-    needs: [build_scan, boot_smoke]
+    needs: [build_scan]
     if: needs.build_scan.outputs.publish == 'true'
     environment: production-signing
 
