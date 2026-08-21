@@ -23,6 +23,13 @@ trap diagnose EXIT
 work_dir=$(mktemp -d /tmp/emryk-boot-smoke.XXXXXXXX)
 trap 'rm -rf -- "$work_dir"' RETURN
 
+# The serial login prompt can appear before multi-user.target finishes
+# starting (slow under software emulation). Wait briefly for readiness so the
+# guest checks do not race the boot.
+for _ in {1..90}; do
+    systemctl is-active --quiet multi-user.target && break
+    sleep 2
+done
 systemctl is-active --quiet multi-user.target
 
 bootc status --json > "$work_dir/bootc-status.json"
