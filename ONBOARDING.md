@@ -26,9 +26,9 @@ the same restrictive default firewall files.
 - Rootless Podman is the default container API path. It reduces exposure from a
   root-owned daemon/socket but does not eliminate operating-system or runtime
   vulnerabilities.
-- The hosted VM boot check boots both variants and checks the expected digest,
-  SELinux, SSH, systemd, firewall, signature policy, and variant boundary. It
-  is advisory and does not gate publication (SECURITY-TODO.md P2).
+- The hosted release gate boots both variants (under OVMF with QEMU software
+  emulation — hosted runners provide no KVM) and checks the expected digest,
+  SELinux, SSH, systemd, firewall, signature policy, and variant boundary.
   Physical NVIDIA execution remains a separate hardware-canary task.
 
 ## Verification evidence

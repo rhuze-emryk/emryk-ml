@@ -32,14 +32,14 @@ belong in GitHub.
    the named Containerfile target, run payload and bootc lint, produce the
    RPM-database SBOM, and pass the critical-CVE gate.
 3. Confirm the log shows one immutable staged digest for each variant.
-4. The two `Boot staged image` legs run in parallel with publication as an
-   advisory health check: they build ephemeral AMD64 QCOW2s from the exact
-   staged digests and boot them under OVMF with QEMU software emulation
-   (GitHub-hosted runners provide no KVM). Their failure does not block the
-   release; inspect the uploaded serial and journal diagnostics when they
-   fail. Re-hardening is tracked as P2 in SECURITY-TODO.md.
-5. Review the pending `production-signing` deployment once the build/scan
-   legs pass. Approve only the digests shown in the run.
+4. Wait for both `Boot staged image` legs. They build ephemeral AMD64 QCOW2s
+   from the exact staged digests and boot them under OVMF with QEMU software
+   emulation (GitHub-hosted runners provide no KVM), so they are the slowest
+   legs. Their failure blocks the release; inspect the uploaded serial and
+   journal diagnostics on failure — disks and CI credentials are never
+   artifacts.
+5. Only after all four build/smoke legs pass, review the pending
+   `production-signing` deployment. Approve only the digests shown in the run.
 6. The publish job signs each digest, verifies it against `cosign.pub`, promotes
    that digest to `latest`, `YYYYMMDD`, and `latest.YYYYMMDD`, then attaches
    build provenance and the already-scanned SBOM.
@@ -108,8 +108,8 @@ When that happens:
    that exact version.
 3. Let Renovate update the new tag's digest, or independently resolve and review
    the digest before committing it.
-4. Require the normal build and scan gates and review the advisory boot smoke
-   diagnostics. Do not infer physical GPU success from module metadata alone.
+4. Require the normal build, scan, and boot smoke gates. Do not infer physical
+   GPU success from module metadata alone.
 
 ## Out-of-band security release
 

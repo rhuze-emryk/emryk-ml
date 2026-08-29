@@ -17,11 +17,10 @@ reboot into a staged deployment before its fixes become active.
 
 Publication is allowed only on the weekly schedule or a default-branch manual
 dispatch. Both variants are built and scanned, pushed under a staging tag, and
-resolved to immutable digests. Each digest is additionally booted under OVMF
-in a QEMU VM (software emulation on GitHub-hosted runners) as an advisory
-post-release health check; it does not gate publication and is tracked as P2
-in [SECURITY-TODO.md](SECURITY-TODO.md). The protected `production-signing`
-environment then requests approval for the built-and-scanned digests.
+resolved to immutable digests. Each digest must then boot under OVMF in a
+QEMU VM (software emulation — GitHub-hosted runners expose no KVM) and pass
+the assertions in `tests/boot-smoke-guest.sh`. Only then does the protected
+`production-signing` environment request approval.
 
 After approval, the workflow signs the staged digest with the encrypted active
 key, verifies that signature against the committed active public key, promotes
