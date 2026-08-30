@@ -88,8 +88,12 @@ flatpak_unit=/etc/systemd/system/emryk-install-flatpaks.service
 systemd-analyze verify "$flatpak_unit"
 [[ $(systemctl is-enabled emryk-install-flatpaks.service) == masked-runtime ]]
 
+# systemctl does not accept a unit pattern after bare --failed (it reads the
+# unit name as a command verb and errors on stderr with empty stdout), which
+# made the previous grep-based form pass unconditionally. is-failed exits 0
+# only when the unit is actually in the failed state.
 for unit in "${essential_units[@]}" emryk-install-flatpaks.service; do
-    if systemctl --failed --no-legend --plain "$unit" | grep -q .; then
+    if systemctl is-failed --quiet "$unit"; then
         echo >&2 "essential unit failed: $unit"
         exit 1
     fi
