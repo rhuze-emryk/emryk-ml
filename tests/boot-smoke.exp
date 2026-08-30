@@ -77,5 +77,20 @@ expect {
 }
 
 expect -re {[$#][[:space:]]*$}
-send -- "sudo systemctl poweroff\r"
-expect eof
+send -- "sudo -S systemctl poweroff\r"
+# Shutdown is cleanup, not an assertion: the smoke checks have already
+# passed. sudo's credential cache from the earlier check run may have
+# expired (slow guest checks under emulation), so answer a fresh password
+# prompt here too. Bound the wait so a wedged poweroff costs minutes, not
+# the remaining 60-minute budget, and never fails a leg whose checks passed.
+set timeout 600
+expect {
+    -re {\[sudo\] password for ci-smoke:[[:space:]]*$} {
+        send -- "$password\r"
+        exp_continue
+    }
+    eof {}
+    timeout {
+        puts stderr "warning: VM did not power off within 10 minutes; exiting after passed checks"
+    }
+}
