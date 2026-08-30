@@ -53,7 +53,7 @@ env:
   DEFAULT_TAG: "latest"
   # Pinned for reproducibility; bumped by Renovate.
   GRYPE_VERSION: "v0.117.0"
-  SYFT_VERSION: "v1.51.0"
+  SYFT_VERSION: "v1.51.1"
 
 concurrency:
   # Suffix the group with whether this run publishes (schedule/dispatch) so
