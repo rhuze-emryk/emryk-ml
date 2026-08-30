@@ -68,12 +68,38 @@ concurrency:
 
 # Three stages, split so the production-signing approval is informed. Before
 # the split, the environment gate sat on the single build job, which paused the
-# run before step one: the maintainer approved a publish having seen no build
-# and no scan. Now build_scan stages exact digests, boot_smoke boots both of
-# them in parallel as an advisory health check (SECURITY-TODO.md P2), and only
-# publish carries the environment gate. Approval therefore means "sign and
-# promote these exact, already-scanned digests".
+# run before step one: the maintainer approved a publish having seen no build,
+# no scan and no boot evidence. Now build_scan stages exact digests, boot_smoke
+# boots both of them, and only publish carries the environment gate. Approval
+# therefore means "sign and promote these exact, already-scanned and booted
+# digests".
 jobs:
+  # Fast repo-policy assertions (tests/test-workflow-policy.sh): action SHA
+  # pinning, the boot-smoke publish gate shape, the deliberate cosign hold,
+  # and secret hygiene. The script existed since 2026-08-06 but nothing
+  # invoked it, so its assertions rotted silently within days — this job is
+  # what makes those assertions binding.
+  workflow_policy:
+    name: Workflow policy checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install ripgrep
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
+      - name: Run policy assertions
+        run: bash tests/test-workflow-policy.sh
+
   build_scan:
     # These job names are the required status checks in branch protection
     # (UPDATING.md §6) — one per matrix leg, "Build and scan image (nvidia)"
@@ -499,18 +525,18 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # Publishing paths also boot both exact staged digests in a VM as an
-  # advisory post-release health check. It runs in parallel with publish and
-  # does not gate it (tech debt: SECURITY-TODO.md P2). GitHub-hosted runners
-  # expose no /dev/kvm, so the smoke VM boots under QEMU software emulation
-  # (slower boot); missing OVMF fails the check itself, not the release.
+  # Publishing paths boot both exact staged digests before the protected
+  # signing environment can be entered. GitHub-hosted runners expose no
+  # /dev/kvm, so the smoke VM boots under QEMU software emulation (slower
+  # boot, hence the generous timeout); missing OVMF or a failed boot is a
+  # release-gate failure. Gate restored 2026-08-29 after the 2026-08-21
+  # multi-user.target race fix held across consecutive publishing runs.
   boot_smoke:
     name: Boot staged image (${{ matrix.variant }})
     needs: build_scan
     if: needs.build_scan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -636,16 +662,15 @@ jobs:
 
   # The publish path: sign -> verify -> promote -> attest, behind the production-signing
   # approval gate (required-reviewer, restricted to main) — KEY-POLICY.md
-  # "GitHub Environment runbook". This job needs only build_scan: boot_smoke
-  # runs in parallel and is advisory (SECURITY-TODO.md P2), so the approval
-  # prompt appears once both exact digests have built and scanned. Signing
-  # secrets are environment-scoped.
+  # "GitHub Environment runbook". Because this job needs both prior jobs, the
+  # approval prompt appears only after both exact digests have built, scanned,
+  # and booted successfully. Signing secrets are environment-scoped.
   publish:
     name: Sign and publish image (${{ matrix.variant }})
     runs-on: ubuntu-24.04
-    # Both matrix legs of the build/scan job must pass before the
+    # Both matrix legs of both prerequisite jobs must pass before the
     # production-signing approval can appear.
-    needs: [build_scan]
+    needs: [build_scan, boot_smoke]
     if: needs.build_scan.outputs.publish == 'true'
     environment: production-signing
 

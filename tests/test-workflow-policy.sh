@@ -32,16 +32,20 @@ fi
 grep -Eq 'BIB_IMAGE: .*@sha256:[0-9a-f]{64}$' "$disk_workflow"
 
 build_workflow=$workflow_dir/build.yml
-grep -Fq 'GRYPE_VERSION: "v0.116.1"' "$build_workflow"
-grep -Fq 'SYFT_VERSION: "v1.50.0"' "$build_workflow"
-grep -Fq 'docker/login-action@dbcb813823bdd20940b903addbd779551569679f' \
-    "$build_workflow"
+# Renovate moves these versions, so assert the pin SHAPE (an exact vX.Y.Z),
+# not a specific version — exact values here rot within days. Action SHAs are
+# covered by the full-SHA pin loop above.
+grep -Eq 'GRYPE_VERSION: "v[0-9]+\.[0-9]+\.[0-9]+"' "$build_workflow"
+grep -Eq 'SYFT_VERSION: "v[0-9]+\.[0-9]+\.[0-9]+"' "$build_workflow"
+# Deliberate hold (SECURITY-TODO.md P2): v3.1.x breaks --key verification.
+# This EXACT pin must scream if anything moves cosign.
 grep -Fq "cosign-release: 'v3.0.6'" "$build_workflow"
-grep -Fq 'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6' \
-    "$build_workflow"
-grep -Fq 'needs: [build_scan]' "$build_workflow"
+grep -Fq 'needs: [build_scan, boot_smoke]' "$build_workflow"
 boot_smoke_block=$(sed -n '/^  boot_smoke:/,/^  publish:/p' "$build_workflow")
-grep -Fq 'continue-on-error: true' <<<"$boot_smoke_block"
+if grep -Fq 'continue-on-error:' <<<"$boot_smoke_block"; then
+    echo >&2 'boot_smoke must gate publish, not run advisory (continue-on-error).'
+    exit 1
+fi
 grep -Fq 'persist-credentials: false' <<<"$boot_smoke_block"
 # shellcheck disable=SC2016
 grep -Fq 'COSIGN_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}' "$build_workflow"
