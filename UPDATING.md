@@ -149,3 +149,9 @@ tag. It resolves the chosen tag to a digest before invoking the digest-pinned
 bootc-image-builder. AMD64 QCOW2 is the only supported disk deliverable. The
 workflow may upload the result to Actions or the configured S3 destination;
 neither path is part of container publication.
+
+Both disk configurations (`disk_config/disk.toml` and the smoke-test
+`tests/boot-smoke-config.json`) size `/boot` at 2 GiB. Every deployment keeps
+a kernel and initramfs there, and the builder's ~1 GiB default has filled on a
+real host, leaving a staged update silently unfinalized. Keep the two files in
+step.

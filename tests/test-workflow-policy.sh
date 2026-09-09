@@ -7,7 +7,7 @@ cd "$repo_root"
 workflow_dir=.github/workflows
 
 moving_runner='ubuntu-''latest'
-if rg -n "runs-on:[[:space:]]+${moving_runner}" "$workflow_dir"; then
+if grep -rEn "runs-on:[[:space:]]+${moving_runner}" "$workflow_dir"; then
     echo >&2 'A workflow still uses a moving Ubuntu runner label.'
     exit 1
 fi
@@ -19,7 +19,7 @@ while IFS= read -r uses_line; do
         echo >&2 "GitHub Action is not pinned by full SHA: $uses_line"
         exit 1
     }
-done < <(rg --no-filename '^\s*uses:[[:space:]]+[^./][^@]*@' "$workflow_dir")
+done < <(grep -rhE '^[[:space:]]*uses:[[:space:]]+[^./][^@]*@' "$workflow_dir")
 
 disk_workflow=$workflow_dir/build-disk.yml
 grep -Fq 'variant:' "$disk_workflow"
@@ -68,7 +68,7 @@ grep -Fq 'Fork pull requests are not authorized' "$opencode_workflow"
 grep -Fq 'OWNER|MEMBER|COLLABORATOR' "$opencode_workflow"
 
 host_specific_re='ani''as|glue''tun|torrent-''jail'
-if rg -n -i "$host_specific_re" "$workflow_dir/monday-cockpit.yml"; then
+if grep -Ein "$host_specific_re" "$workflow_dir/monday-cockpit.yml"; then
     echo >&2 'Repository cockpit still contains host-specific monitoring.'
     exit 1
 fi

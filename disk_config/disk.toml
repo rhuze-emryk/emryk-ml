@@ -1,3 +1,14 @@
 [[customizations.filesystem]]
 mountpoint = "/"
 minsize = "20 GiB"
+
+# /boot holds a kernel + initramfs (~250 MB) for EVERY deployment: booted,
+# rollback, and any pinned reference deployments. The builder's ~1 GiB
+# default filled up on a real host on 2026-05-16 and the staged update
+# silently failed to finalize ("Installing kernel: regfile copy: No space
+# left on device") while the system kept booting the old deployment.
+# 2 GiB is the Emryk provisioning minimum. Keep tests/boot-smoke-config.json
+# in step with this file.
+[[customizations.filesystem]]
+mountpoint = "/boot"
+minsize = "2 GiB"

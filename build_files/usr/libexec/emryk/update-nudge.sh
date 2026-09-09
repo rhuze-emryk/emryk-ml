@@ -55,8 +55,12 @@ mkdir -p /run/motd.d
     echo
     echo "  *** A system update has been downloaded and staged. ***"
     if [[ -n $staged_kver ]]; then
-        echo "      It includes a new kernel (${running_kver} -> ${staged_kver});"
-        echo "      the NVIDIA driver reloads on reboot."
+        echo "      It includes a new kernel (${running_kver} -> ${staged_kver})."
+        # Only the NVIDIA image carries out-of-tree modules that must match
+        # the new kernel; the Intel image has nothing to reload.
+        if modinfo nvidia >/dev/null 2>&1; then
+            echo "      The NVIDIA driver reloads on reboot."
+        fi
     fi
     echo "      Reboot when convenient to apply it:  sudo systemctl reboot"
     echo "      Nothing reboots on its own; running jobs are safe until you do."
