@@ -60,13 +60,6 @@ verify_line=$(grep -n -- '- name: Verify signature with expected active key' "$b
 promote_line=$(grep -n -- '- name: Promote verified digest to release tags' "$build_workflow" | cut -d: -f1)
 (( sign_line < verify_line && verify_line < promote_line ))
 
-opencode_workflow=$workflow_dir/opencode.yml
-[[ $(grep -Fc 'OPENAI_API_KEY:' "$opencode_workflow") -eq 1 ]]
-grep -Fq 'needs: authorize' "$opencode_workflow"
-grep -Fq "if: needs.authorize.outputs.authorized == 'true'" "$opencode_workflow"
-grep -Fq 'Fork pull requests are not authorized' "$opencode_workflow"
-grep -Fq 'OWNER|MEMBER|COLLABORATOR' "$opencode_workflow"
-
 host_specific_re='ani''as|glue''tun|torrent-''jail'
 if grep -Ein "$host_specific_re" "$workflow_dir/monday-cockpit.yml"; then
     echo >&2 'Repository cockpit still contains host-specific monitoring.'

@@ -62,7 +62,6 @@ consistent malicious artifacts.
 | SELinux | Persistent configuration requests enforcing mode and VM smoke asserts `getenforce` | Local administrators and kernel command-line changes can disable or relax enforcement |
 | Containers | Rootless user socket enabled; rootful system socket not enabled | Rootless operation does not eliminate kernel, runtime, user-namespace, device, or user-account privilege risks |
 | Updates | Timer fetches and stages verified deployments without rebooting | A compromised trusted signer or authorized build path can publish a signed bad update; delayed operator reboot delays fixes |
-| OpenCode | Slash commands require trusted commenter and PR author associations, a same-repository PR, and immutable head SHA before checkout/API-key exposure | OpenCode executes repository content and is not a security sandbox; maintainer authorization is the trust boundary |
 
 ## Variant boundary
 
