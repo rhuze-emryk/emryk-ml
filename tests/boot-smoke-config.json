@@ -16,6 +16,10 @@
       {
         "mountpoint": "/",
         "minsize": "20 GiB"
+      },
+      {
+        "mountpoint": "/boot",
+        "minsize": "2 GiB"
       }
     ]
   }

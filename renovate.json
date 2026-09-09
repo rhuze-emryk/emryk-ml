@@ -52,11 +52,12 @@
       "pinDigests": true
     },
     {
-      "description": "Hold cosign below v3.1: v3.1.x removed explicit legacy key-attachment selection and cannot verify these images when keyless OCI attestation bundles coexist. Re-evaluate with a live signature-policy rehearsal before lifting.",
+      "description": "Hold cosign below v3.1: v3.1.x removed explicit legacy key-attachment selection and cannot verify these images when keyless OCI attestation bundles coexist. Re-evaluate with a live signature-policy rehearsal before lifting. pinDigests is OFF for this entry: Renovate reads cosign-installer's `cosign-release: vX.Y.Z` input as a sigstore/cosign dependency, and the github-actions pinDigests rule above would rewrite that version string to a commit SHA the installer cannot resolve. It surfaced as a permanent 'pin dependency sigstore/cosign to <sha>' Dependency Dashboard entry (test-workflow-policy.sh rejects the exact-string change regardless).",
       "matchPackageNames": [
         "sigstore/cosign"
       ],
-      "allowedVersions": "<3.1.0"
+      "allowedVersions": "<3.1.0",
+      "pinDigests": false
     },
     {
       "description": "Auto-merge container base-image digest refreshes once CI is green. The kernel<->akmods coupling check in build.yml is the safety interlock: a kinoite-main bump that moves the kernel fails until the akmods tag is updated. Tag/version changes are never auto-merged. Customer machines fetch and stage without rebooting.",

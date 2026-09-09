@@ -40,7 +40,6 @@ on:
       - '.github/workflows/build-disk.yml'
       - 'LICENSE'
       - 'Justfile'
-      - 'artifacthub-repo.yml'
       - '.gitignore'
   workflow_dispatch:
 
@@ -74,11 +73,15 @@ concurrency:
 # therefore means "sign and promote these exact, already-scanned and booted
 # digests".
 jobs:
-  # Fast repo-policy assertions (tests/test-workflow-policy.sh): action SHA
-  # pinning, the boot-smoke publish gate shape, the deliberate cosign hold,
-  # and secret hygiene. The script existed since 2026-08-06 but nothing
-  # invoked it, so its assertions rotted silently within days — this job is
-  # what makes those assertions binding.
+  # Fast repository-local assertions — every tests/test-*.sh, the same set
+  # `just local-smoke` runs: action SHA pinning, the boot-smoke publish gate
+  # shape, the deliberate cosign hold and secret hygiene (workflow policy);
+  # the Intel/NVIDIA stage boundary and host signature-policy shape (static
+  # policy); the payload guard's negative cases; and repository-relative
+  # Markdown links. test-workflow-policy.sh existed from 2026-08-06 with
+  # nothing invoking it and its assertions rotted within days; the other
+  # three sat in that same state until 2026-09-09. Running the whole glob
+  # here is what keeps all of them binding.
   workflow_policy:
     name: Workflow policy checks
     runs-on: ubuntu-24.04
@@ -91,20 +94,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install ripgrep
+      - name: Run repository policy tests
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y ripgrep
-
-      - name: Run policy assertions
-        run: bash tests/test-workflow-policy.sh
+          for test_script in tests/test-*.sh; do
+            bash "$test_script"
+          done
 
   build_scan:
-    # These job names are the required status checks in branch protection
-    # (UPDATING.md §6) — one per matrix leg, "Build and scan image (nvidia)"
-    # and "Build and scan image (intel)". Rename them together or PRs can
-    # never merge.
+    # These job names are required status checks in branch protection (with
+    # "Workflow policy checks") — one per matrix leg, "Build and scan image
+    # (nvidia)" and "Build and scan image (intel)". Rename them together or
+    # PRs can never merge.
     name: Build and scan image (${{ matrix.variant }})
     runs-on: ubuntu-24.04
 
@@ -173,7 +174,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-          NONIMAGE_RE: '(\.md$|^docs/|^\.docs/|^\.claude/|^disk_config/|^renovate\.json$|^\.github/renovate\.json5$|^\.github/workflows/(renovate-notify|vendor-drift-watch|monday-cockpit|build-disk)\.yml$|^LICENSE$|^Justfile$|^artifacthub-repo\.yml$|^\.gitignore$)'
+          NONIMAGE_RE: '(\.md$|^docs/|^\.docs/|^\.claude/|^disk_config/|^renovate\.json$|^\.github/renovate\.json5$|^\.github/workflows/(renovate-notify|vendor-drift-watch|monday-cockpit|build-disk)\.yml$|^LICENSE$|^Justfile$|^\.gitignore$)'
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" != 'pull_request' ]; then
@@ -233,8 +234,6 @@ jobs:
             type=raw,value=${{ env.DEFAULT_TAG }}
             type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
             type=raw,value={{date 'YYYYMMDD'}}
-            type=sha,enable=${{ github.event_name == 'pull_request' }}
-            type=ref,event=pr
           # Repo URLs use the repository name, not IMAGE_NAME — the two
           # diverge on suffixed variants (emryk-ml-intel is not a repo).
           labels: |
@@ -661,8 +660,8 @@ jobs:
           retention-days: 7
 
   # The publish path: sign -> verify -> promote -> attest, behind the production-signing
-  # approval gate (required-reviewer, restricted to main) — KEY-POLICY.md
-  # "GitHub Environment runbook". Because this job needs both prior jobs, the
+  # approval gate (required-reviewer, restricted to main) — UPDATING.md
+  # "Release cadence and prerequisites". Because this job needs both prior jobs, the
   # approval prompt appears only after both exact digests have built, scanned,
   # and booted successfully. Signing secrets are environment-scoped.
   publish:

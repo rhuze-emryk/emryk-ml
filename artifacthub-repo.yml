@@ -1,7 +1,0 @@
-# Register this repo at https://artifacthub.io/ and fill in repositoryID below.
-# Owners field is optional but enables ownership verification on ArtifactHub.
-
-repositoryID: ""
-owners:
-  - name: Rich Hughes
-    email: rh@emryk.com
