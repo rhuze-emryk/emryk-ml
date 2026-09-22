@@ -5,7 +5,7 @@ signer changes; [SECURITY.md](SECURITY.md) defines the assurances being tested.
 
 ## Release cadence and prerequisites
 
-The `Build container image` workflow runs weekly on Monday and may be dispatched
+The `Build container image` workflow runs weekly on Saturday and may be dispatched
 manually from the default branch. Pushes and pull requests validate but do not
 publish. The two image names remain:
 
@@ -26,7 +26,7 @@ belong in GitHub.
 ## Normal weekly release
 
 1. Review Renovate, vendored dependency drift, and open pull requests in the
-   Monday repository cockpit. Resolve red base/kernel coupling PRs before
+   weekly repository cockpit. Resolve red base/kernel coupling PRs before
    releasing.
 2. Open the scheduled workflow run. Both `Build and scan image` legs must build
    the named Containerfile target, run payload and bootc lint, produce the
@@ -48,7 +48,11 @@ belong in GitHub.
 
 Rejecting or leaving the environment approval pending is safe: release tags do
 not move. The unsigned staging tag is not accepted by hosts enforcing the
-signature policy.
+signature policy. The intended rhythm is approval on Saturday or Sunday
+evening; a pending approval survives until the run's artifacts expire after
+seven days. After approval, managed hosts fetch and stage the release within
+roughly ten hours through `bootc-fetch-apply-updates.timer`; run
+`sudo bootc upgrade` to stage it immediately, then reboot when convenient.
 
 ## Live verification
 
