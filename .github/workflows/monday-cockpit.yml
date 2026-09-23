@@ -1,10 +1,10 @@
-name: Monday repository cockpit
+name: Weekly repository cockpit
 
 # Repository-scoped signals only. Host and service monitoring belongs in the
 # host-infrastructure repository, where the deployed state is authoritative.
 on:
   schedule:
-    - cron: '30 13 * * MON'
+    - cron: '30 13 * * SAT'
   workflow_dispatch:
 
 permissions:
@@ -82,7 +82,7 @@ jobs:
           run=$(gh run list --workflow build.yml --event schedule --limit 1 \
             --json status,conclusion,url --jq '.[0]' 2>/dev/null || true)
           if [[ -z $run || $run == null ]]; then
-            publish='No scheduled release run found; it normally starts Monday at 10:05 UTC.'
+            publish='No scheduled release run found; it normally starts Saturday at 10:05 UTC.'
           else
             status=$(jq -r '.status // ""' <<<"$run")
             conclusion=$(jq -r '.conclusion // ""' <<<"$run")
@@ -102,7 +102,7 @@ jobs:
           [[ -n $health ]] || health='- _Renovate and pin-age signals are current._'
 
           {
-            printf '## Monday repository cockpit — %s\n\n' "$today"
+            printf '## Weekly repository cockpit — %s\n\n' "$today"
             printf '@%s — repository release and dependency signals only.\n\n' "${GH_REPO%%/*}"
             echo '**Automation health**'
             echo
@@ -123,8 +123,8 @@ jobs:
               "$auto_count" "$GH_REPO"
           } > /tmp/cockpit.md
 
-          title='Monday repository cockpit'
-          issue_number=$(gh issue list --state open --search 'in:title "Monday repository cockpit"' \
+          title='Weekly repository cockpit'
+          issue_number=$(gh issue list --state open --search 'in:title "Weekly repository cockpit"' \
             --json number --jq '.[0].number // ""')
           if [[ -z $issue_number ]]; then
             issue_url=$(gh issue create --title "$title" \

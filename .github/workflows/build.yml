@@ -8,16 +8,19 @@ on:
     # Weekly, not nightly — and this scheduled run is the ONLY routine publish.
     # Pushes to main build-and-test but do NOT publish (the sign-and-publish
     # job below only runs on the publishing paths): the registry moves only on
-    # this Monday cron or a manual workflow_dispatch. That gives the maintainer
+    # this Saturday cron or a manual workflow_dispatch. That gives the maintainer
     # one predictable approval per week instead of one per merge.
     #
     # The base is digest-pinned, so a scheduled rebuild only refreshes the ~20
     # dnf-layered packages — kernel/userland/driver arrive via Renovate digest
-    # bumps (auto-merged to main during the week, then shipped by the next run
-    # of this cron). Monday aligns with vendor-drift-watch; fire
-    # workflow_dispatch for an urgent fix that can't wait for Monday.
+    # bumps (auto-merged to main Thursday through early Saturday UTC, then
+    # shipped by this cron). Saturday morning UTC puts the candidate at the
+    # production-signing gate by early Saturday afternoon ET, so the maintainer
+    # can approve on Saturday or Sunday evening and reboot hosts before the
+    # work week. Saturday aligns with vendor-drift-watch and the cockpit; fire
+    # workflow_dispatch for an urgent fix that can't wait for Saturday.
     # See UPDATING.md.
-    - cron: '05 10 * * MON'  # 10:05 UTC Mondays
+    - cron: '05 10 * * SAT'  # 10:05 UTC Saturdays
   push:
     branches:
       - main
@@ -145,7 +148,7 @@ jobs:
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> "$GITHUB_ENV"
           echo "IMAGE_NAME=${IMAGE_NAME,,}${{ matrix.image-suffix }}" >> "$GITHUB_ENV"
 
-      # Single source of truth for "does this run publish?": the Monday
+      # Single source of truth for "does this run publish?": the Saturday
       # schedule and manual workflow_dispatch on the default branch only.
       # Pull requests and ordinary pushes to main build-and-test but never
       # publish, so a merge never moves the registry on its own — the weekly

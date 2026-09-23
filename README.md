@@ -3,7 +3,7 @@
 [![Build status](https://github.com/rhuze-emryk/emryk-ml/actions/workflows/build.yml/badge.svg)](https://github.com/rhuze-emryk/emryk-ml/actions/workflows/build.yml)
 
 Emryk ML is a managed Fedora Kinoite [bootc](https://github.com/bootc-dev/bootc)
-image for ML workstations. It publishes two AMD64 variants each Monday, or on
+image for ML workstations. It publishes two AMD64 variants each Saturday, or on
 an explicitly approved manual release:
 
 | Image | Intended hardware | Variant-specific payload |

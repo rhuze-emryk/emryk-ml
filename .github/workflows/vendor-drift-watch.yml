@@ -2,7 +2,7 @@ name: Vendored dependency drift watch
 
 on:
   schedule:
-    - cron: '0 13 * * MON'
+    - cron: '0 13 * * SAT'
   workflow_dispatch:
 
 permissions:
