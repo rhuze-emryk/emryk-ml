@@ -10,7 +10,7 @@ COPY cosign.pub /cosign.pub
 # the runtime verifies. Bump both together when intentionally rolling forward.
 FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.0.14-201.fc44.x86_64@sha256:b523ce150646722ab57aecdb54269451397ad03362d16fa3a483e49637da4331 AS akmods
 
-FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:dd01b439a5b6be0e1874720f671bf8de620dcd65c1c776909bca988ffa1f3e55 AS kinoite
+FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:13deb54626ee5b1197fc43d11d1801d95afecf2ce3fa38eb8d58e971d875a507 AS kinoite
 
 # ---------------------------------------------------------------------------
 # intel: laptop/iGPU variant (published as emryk-ml-intel). Same payload and
