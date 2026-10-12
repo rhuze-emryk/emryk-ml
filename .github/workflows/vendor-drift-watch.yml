@@ -167,8 +167,9 @@ jobs:
             echo
             echo '**Do not update the vendored keys automatically.** Confirm the rotation through an independent Universal Blue channel (announcement, the key in `ublue-os/main` `cosign.pub`, maintainers), then land the new key in a security-reviewed pull request. Until then, builds keep verifying against the old key and will fail once upstream signs only with the new one.'
           } > /tmp/ublue-key-issue.md
-          existing=$(gh issue list --state open --search "in:title \"$title\"" \
-            --json number --jq '.[0].number // ""')
+          # Exact title match: GitHub issue search is fuzzy full-text.
+          existing=$(gh issue list --state open --limit 300 --json number,title \
+            | jq -r --arg t "$title" 'map(select(.title == $t))[0].number // ""')
           if [[ -n $existing ]]; then
             gh issue edit "$existing" --body-file /tmp/ublue-key-issue.md
           else
