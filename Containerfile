@@ -10,7 +10,12 @@ COPY cosign.pub /cosign.pub
 # the runtime verifies. Bump both together when intentionally rolling forward.
 FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.2.9-200.fc44.x86_64@sha256:b7f276b51d2f6f07e9489392dbf517358d8cee6f6ebd6eeeb9e72901246715ef AS akmods
 
-FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:d3bcb4a948fb09420d66e2deaaad82b1078b7f7f77d9d682d5a8ce1205a419cc AS kinoite
+# kinoite-main tracks the Fedora major (:44), not :latest. Upstream moves
+# :latest to a new Fedora release a few weeks after it ships, and Renovate
+# would deliver that as an auto-merged "digest" refresh. A Fedora major move
+# must be a deliberate PR that bumps this tag and the akmods -44- tag together;
+# upstream-release-watch.yml opens an issue when :latest moves past this pin.
+FROM ghcr.io/ublue-os/kinoite-main:44@sha256:d3bcb4a948fb09420d66e2deaaad82b1078b7f7f77d9d682d5a8ce1205a419cc AS kinoite
 
 # ---------------------------------------------------------------------------
 # intel: laptop/iGPU variant (published as emryk-ml-intel). Same payload and
