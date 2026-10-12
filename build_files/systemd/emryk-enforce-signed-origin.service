@@ -1,0 +1,12 @@
+[Unit]
+Description=Make OS updates verify Emryk image signatures
+Documentation=https://github.com/rhuze-emryk/emryk-ml/blob/main/README.md#install-or-switch
+ConditionPathExists=/run/ostree-booted
+Before=bootc-fetch-apply-updates.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/emryk/enforce-signed-origin.sh
+
+[Install]
+WantedBy=multi-user.target

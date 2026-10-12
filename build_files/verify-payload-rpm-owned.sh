@@ -38,6 +38,7 @@ readonly ALLOWLIST_REGEX=(
   # anything else under /usr/libexec/emryk must fail this guard.
   '^/usr/libexec/emryk/install-flatpaks\.sh$'
   '^/usr/libexec/emryk/update-nudge\.sh$'
+  '^/usr/libexec/emryk/enforce-signed-origin\.sh$'
   '^/usr/lib/modprobe\.d/blacklist-nouveau\.conf$'
 
   # rpm-ostree / bootc machinery: tmpfiles configs, rpm macros, prepare-root,
