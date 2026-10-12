@@ -32,7 +32,9 @@ The release provides three complementary, independently inspectable artifacts:
 
 1. The Emryk cosign signature trusts the active public key in this repository.
    Installed hosts enforce it through one `sigstoreSigned` policy requirement
-   whose `keyPaths` are alternatives. The offline recovery public key becomes a
+   whose `keyPaths` are alternatives, on deployments switched with
+   `bootc switch --enforce-container-sigpolicy` (an `ostree-unverified-registry`
+   deployment does not consult the policy for OS updates). The offline recovery public key becomes a
    second permanent alternative only after its explicit bootstrap transition.
 2. Build provenance trusts the GitHub Actions OIDC workload identity and the
    Sigstore/GitHub attestation verification path. It identifies the repository,

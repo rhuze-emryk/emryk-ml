@@ -57,13 +57,16 @@ install -D -m 0644 /ctx/ssh/sshd_config.d/10-emryk.conf \
     /etc/ssh/sshd_config.d/10-emryk.conf
 
 # Enforce cosign signature verification on pulls from
-# ghcr.io/rhuze-emryk. After a user `bootc switch`es to a build that contains
-# these files, every subsequent pull from our namespace must verify against
-# the public key shipped at /etc/pki/containers/rhuze-emryk.pub or the pull
-# is rejected. Other registries (Flathub, docker.io, ublue-os
-# bases) continue to use the default insecureAcceptAnything so they keep
-# working unchanged. Recovery from a misconfiguration is `bootc rollback` to
-# the pre-policy deployment.
+# ghcr.io/rhuze-emryk. Pulls from our namespace must verify against the public
+# key shipped at /etc/pki/containers/rhuze-emryk.pub or they are rejected.
+# The top-level default is `reject` because bootc refuses
+# `switch --enforce-container-sigpolicy` while the default is
+# insecureAcceptAnything — without it, deployments stay
+# ostree-unverified-registry and the OS update path never consults this
+# policy at all. Other registries (Flathub, docker.io, ublue-os bases) and
+# local transports keep working through explicit per-transport "" catch-alls,
+# which accept anything exactly as before. Recovery from a misconfiguration
+# is `bootc rollback` to the pre-policy deployment.
 mkdir -p /etc/pki/containers
 install -m 0644 /ctx/cosign.pub /etc/pki/containers/rhuze-emryk.pub
 

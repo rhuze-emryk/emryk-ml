@@ -74,6 +74,7 @@ grep -Eq '<interface[[:space:]]+name="tailscale0"[[:space:]]*/>' \
     /etc/firewalld/zones/tailscale.xml
 
 jq empty /etc/containers/policy.json
+jq -e '.default == [{"type": "reject"}]' /etc/containers/policy.json >/dev/null
 mapfile -t key_paths < <(jq -r '
     [.. | objects | select(.type? == "sigstoreSigned") | .keyPaths[]?] | unique[]
 ' /etc/containers/policy.json)

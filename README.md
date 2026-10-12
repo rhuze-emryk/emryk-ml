@@ -17,17 +17,36 @@ behavior. The published image names and moving `:latest` tags are stable.
 
 ## Install or switch
 
-From an AMD64 bootc system, select exactly one variant:
+From an AMD64 bootc system, select exactly one variant. Installing takes two
+switches: the first brings in the Emryk signing key and signature policy, which
+the source system does not have yet; the second, after rebooting, makes every
+later update verify the signature against that key.
 
 ```bash
 sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml:latest
+sudo systemctl reboot
+# after the reboot:
+sudo bootc switch --enforce-container-sigpolicy ghcr.io/rhuze-emryk/emryk-ml:latest
 sudo systemctl reboot
 ```
 
 ```bash
 sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml-intel:latest
 sudo systemctl reboot
+# after the reboot:
+sudo bootc switch --enforce-container-sigpolicy ghcr.io/rhuze-emryk/emryk-ml-intel:latest
+sudo systemctl reboot
 ```
+
+`rpm-ostree status` should then show the deployment as
+`ostree-image-signed:docker://ghcr.io/rhuze-emryk/…`. If it shows
+`ostree-unverified-registry:`, updates are **not** signature-checked. Hosts
+installed before this two-step procedure are in that state. Update normally
+once (`sudo bootc update`, reboot) so the host receives a policy bootc will
+enforce, then run the second `switch --enforce-container-sigpolicy` command
+above. If the switch fails with `containers-policy.json specifies a default of
+insecureAcceptAnything`, the update has not yet arrived or `/etc/containers/policy.json` was
+modified locally. Compare it with `/usr/etc/containers/policy.json`.
 
 `bootc-fetch-apply-updates.timer` periodically fetches and stages a newer
 signed deployment. It does not initiate a reboot. A login message announces a
@@ -89,7 +108,9 @@ cosign verify \
 ```
 
 Installed hosts use `/etc/containers/policy.json` to require a matching
-signature for pulls under `ghcr.io/rhuze-emryk`. The recovery signer is not an
+signature for pulls under `ghcr.io/rhuze-emryk`. OS updates enforce it only on
+deployments switched with `--enforce-container-sigpolicy` (see
+[Install or switch](#install-or-switch)). The recovery signer is not an
 operational host trust root until the offline custodian supplies and commits
 `recovery-cosign.pub`; that bootstrap is tracked as P0 in
 [SECURITY-TODO.md](SECURITY-TODO.md).
