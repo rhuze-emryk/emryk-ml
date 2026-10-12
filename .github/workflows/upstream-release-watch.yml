@@ -1,9 +1,17 @@
-name: Upstream Fedora release watch
+name: Upstream release watch
 
-# kinoite-main is pinned to a Fedora major tag (e.g. :44) in Containerfile, so
+# Two daily checks against Universal Blue, each kept as one assigned issue:
+#
+# fedora-major: kinoite-main is pinned to a Fedora major tag (e.g. :44), so
 # a new Fedora release never arrives through Renovate. This job notices when
 # upstream's :latest has moved to a newer major and opens a tracking issue, so
 # the migration is a deliberate, reviewed PR rather than a surprise.
+#
+# kernel-nvidia: a new kernel arrives as a new akmods-nvidia-open *tag*, which
+# Renovate never sees, and upstream later deletes the old tag (breaking our
+# digest pin). This job reports a new kernel or NVIDIA driver as soon as a
+# matching base + akmods pair exists, with the exact pin lines to ship it.
+# See scripts/check-kernel-nvidia-upstream.sh.
 
 on:
   schedule:
@@ -82,3 +90,101 @@ jobs:
             gh issue create --title "$title" --body-file /tmp/fedora-issue.md \
               --assignee rhuze-emryk --label dependencies
           fi
+
+  kernel-nvidia:
+    name: Compare pinned kernel and NVIDIA driver with upstream
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check upstream kinoite-main and akmods-nvidia-open
+        id: check
+        run: |
+          set -euo pipefail
+          scripts/check-kernel-nvidia-upstream.sh | tee -a "$GITHUB_OUTPUT"
+
+      - name: Open, update, or close the kernel/NVIDIA update issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: ${{ steps.check.outputs.state }}
+          MAJOR: ${{ steps.check.outputs.major }}
+          PINNED_TAG: ${{ steps.check.outputs.pinned_tag }}
+          PINNED_KVER: ${{ steps.check.outputs.pinned_kver }}
+          PINNED_NVIDIA: ${{ steps.check.outputs.pinned_nvidia }}
+          UPSTREAM_KVER: ${{ steps.check.outputs.upstream_kver }}
+          UPSTREAM_BASE_DIGEST: ${{ steps.check.outputs.upstream_base_digest }}
+          TARGET_TAG: ${{ steps.check.outputs.target_tag }}
+          TARGET_DIGEST: ${{ steps.check.outputs.target_digest }}
+          TARGET_NVIDIA: ${{ steps.check.outputs.target_nvidia }}
+        run: |
+          set -euo pipefail
+          search='in:title "Upstream kernel/NVIDIA"'
+          existing=$(gh issue list --state open --search "$search" \
+            --json number --jq '.[0].number // ""')
+          # The marker records what was last reported, so a comment (which
+          # notifies) is posted only when the situation actually changes.
+          marker="<!-- watch-state: ${STATE} ${UPSTREAM_KVER} ${TARGET_NVIDIA} -->"
+
+          if [[ $STATE == current ]]; then
+            if [[ -n $existing ]]; then
+              gh issue comment "$existing" --body "Pins now match upstream (kernel \`${PINNED_KVER}\`, NVIDIA \`${PINNED_NVIDIA}\`). Closing."
+              gh issue close "$existing"
+            fi
+            echo "Up to date: kernel ${PINNED_KVER}, NVIDIA ${PINNED_NVIDIA}"
+            exit 0
+          fi
+
+          case $STATE in
+            broken)
+              title="Upstream kernel/NVIDIA: pinned akmods image deleted upstream — builds are broken"
+              summary="The pinned \`akmods-nvidia-open:${PINNED_TAG}\` digest no longer exists upstream, so every nvidia build fails with \`manifest unknown\`." ;;
+            waiting)
+              title="Upstream kernel/NVIDIA: kernel ${UPSTREAM_KVER} in base, waiting on akmods"
+              summary="\`kinoite-main:${MAJOR}\` now ships kernel \`${UPSTREAM_KVER}\` (pinned: \`${PINNED_KVER}\`), but \`akmods-nvidia-open:${TARGET_TAG}\` is not published yet. Nothing to do until it is; this issue will update when it lands." ;;
+            ready)
+              title="Upstream kernel/NVIDIA: ready to publish (kernel ${UPSTREAM_KVER}, NVIDIA ${TARGET_NVIDIA})"
+              summary="A matching base + akmods pair is available upstream." ;;
+            *)
+              echo "::error::unknown state ${STATE}"; exit 1 ;;
+          esac
+
+          {
+            echo "$marker"
+            echo "$summary"
+            echo
+            echo '| | pinned | upstream |'
+            echo '|---|---|---|'
+            echo "| kernel | \`${PINNED_KVER}\` | \`${UPSTREAM_KVER}\` |"
+            echo "| NVIDIA driver | \`${PINNED_NVIDIA}\` | \`${TARGET_NVIDIA}\` |"
+            if [[ $TARGET_DIGEST != none ]]; then
+              echo
+              echo 'To ship it, replace the two `FROM` lines in `Containerfile` with:'
+              echo
+              echo '```dockerfile'
+              echo "FROM ghcr.io/ublue-os/akmods-nvidia-open:${TARGET_TAG}@${TARGET_DIGEST} AS akmods"
+              echo
+              echo "FROM ghcr.io/ublue-os/kinoite-main:${MAJOR}@${UPSTREAM_BASE_DIGEST} AS kinoite"
+              echo '```'
+              echo
+              echo 'Then open a PR, merge it once green, and run `gh workflow run build.yml --ref main` to publish without waiting for Saturday.'
+            fi
+            echo
+            echo '_Maintained by upstream-release-watch.yml; it closes itself once the pins match upstream._'
+          } > /tmp/kernel-issue.md
+
+          if [[ -z $existing ]]; then
+            gh issue create --title "$title" --body-file /tmp/kernel-issue.md \
+              --assignee rhuze-emryk --label dependencies
+          else
+            previous=$(gh issue view "$existing" --json body --jq '.body' | head -1 | tr -d '\r')
+            gh issue edit "$existing" --title "$title" --body-file /tmp/kernel-issue.md
+            if [[ $previous != "$marker" ]]; then
+              gh issue comment "$existing" --body "Status changed: **${title#Upstream kernel/NVIDIA: }**"
+            fi
+          fi
+
+          # A deleted pin means main cannot build at all: also fail the run.
+          [[ $STATE != broken ]]
