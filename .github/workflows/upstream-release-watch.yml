@@ -82,8 +82,10 @@ jobs:
             echo
             echo 'Upstream usually stabilizes for a week or two after the switch; there is no need to migrate on day one.'
           } > /tmp/fedora-issue.md
-          existing=$(gh issue list --state open --search "in:title \"is live on kinoite-main:latest\"" \
-            --json number --jq '.[0].number // ""')
+          # Match titles client-side: GitHub issue search is fuzzy full-text
+          # and could hand back (and this step would overwrite) another issue.
+          existing=$(gh issue list --state open --limit 300 --json number,title \
+            | jq -r 'map(select(.title | test("^Fedora [0-9]+ is live on kinoite-main:latest")))[0].number // ""')
           if [[ -n $existing ]]; then
             gh issue edit "$existing" --title "$title" --body-file /tmp/fedora-issue.md
           else
@@ -121,9 +123,9 @@ jobs:
           TARGET_NVIDIA: ${{ steps.check.outputs.target_nvidia }}
         run: |
           set -euo pipefail
-          search='in:title "Upstream kernel/NVIDIA"'
-          existing=$(gh issue list --state open --search "$search" \
-            --json number --jq '.[0].number // ""')
+          # Match titles client-side (see fedora-major above).
+          existing=$(gh issue list --state open --limit 300 --json number,title \
+            | jq -r 'map(select(.title | startswith("Upstream kernel/NVIDIA:")))[0].number // ""')
           # The marker records what was last reported, so a comment (which
           # notifies) is posted only when the situation actually changes.
           marker="<!-- watch-state: ${STATE} ${UPSTREAM_KVER} ${TARGET_NVIDIA} -->"

@@ -79,8 +79,9 @@ jobs:
             echo
             echo 'Review the upstream change and update the vendored file in a pull request. Preserve the local file:// signing-key reference.'
           } > /tmp/repo-issue.md
-          existing=$(gh issue list --state open --search "in:title \"$title\"" \
-            --json number --jq '.[0].number // ""')
+          # Exact title match: GitHub issue search is fuzzy full-text.
+          existing=$(gh issue list --state open --limit 300 --json number,title \
+            | jq -r --arg t "$title" 'map(select(.title == $t))[0].number // ""')
           if [[ -n $existing ]]; then
             gh issue edit "$existing" --body-file /tmp/repo-issue.md
           else
@@ -107,8 +108,9 @@ jobs:
             echo
             echo '**Do not update the key automatically.** Confirm the rotation through an independent Tailscale channel, review the new fingerprint, and land the new public key plus recorded hash in a security-reviewed pull request.'
           } > /tmp/key-issue.md
-          existing=$(gh issue list --state open --search "in:title \"$title\"" \
-            --json number --jq '.[0].number // ""')
+          # Exact title match: GitHub issue search is fuzzy full-text.
+          existing=$(gh issue list --state open --limit 300 --json number,title \
+            | jq -r --arg t "$title" 'map(select(.title == $t))[0].number // ""')
           if [[ -n $existing ]]; then
             gh issue edit "$existing" --body-file /tmp/key-issue.md
           else

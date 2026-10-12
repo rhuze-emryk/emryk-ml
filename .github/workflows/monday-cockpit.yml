@@ -27,9 +27,16 @@ jobs:
           set -euo pipefail
           today=$(date -u +%Y-%m-%d)
 
-          prs=$(gh pr list --state open --limit 50 \
-            --json number,title,isDraft,autoMergeRequest,statusCheckRollup \
-            2>/dev/null || echo '[]')
+          # Every query fails closed: an API error becomes a visible warning
+          # in the comment, never an empty list that reads as "all clear".
+          alarms=''
+          alarm() { alarms+="- ⚠️ $1\\n"; }
+
+          if ! prs=$(gh pr list --state open --limit 50 \
+            --json number,title,isDraft,autoMergeRequest,statusCheckRollup); then
+            alarm 'Could not list open PRs; the PR sections below are incomplete.'
+            prs='[]'
+          fi
           normalized=$(jq -c '
             def result: (.conclusion // .state // .status // "") | ascii_upcase;
             [ .[] | {
@@ -53,24 +60,46 @@ jobs:
           auto_count=$(jq -r '[.[] | select(.isDraft | not) | select(.autoMerge) | select(.red | not)] | length' \
             <<<"$normalized")
 
-          drift=$(gh issue list --state open \
-            --search 'in:title (drifted OR "SECURITY REVIEW")' \
-            --json number,title --jq '.[] | "- #\(.number) \(.title)"' \
-            2>/dev/null || true)
+          # Titles are matched client-side: GitHub issue search is fuzzy
+          # full-text and OR'd phrases match unrelated issues. These are the
+          # titles vendor-drift-watch.yml and upstream-release-watch.yml open.
+          if issues=$(gh issue list --state open --limit 300 --json number,title); then
+            drift=$(jq -r '
+              .[] | select(.title | test("drifted from upstream|^SECURITY REVIEW:|is live on kinoite-main:latest|^Upstream kernel/NVIDIA:"))
+              | "- #\(.number) \(.title)"
+            ' <<<"$issues")
+          else
+            alarm 'Could not list open issues; drift and upstream alerts are unknown.'
+            issues='[]'
+            drift=''
+          fi
 
           now_seconds=$(date -u +%s)
           health=''
-          pin_date=$(gh api "repos/$GH_REPO/commits?path=Containerfile&per_page=1" \
-            --jq '.[0].commit.committer.date' 2>/dev/null || true)
-          if [[ -n $pin_date ]]; then
-            pin_seconds=$(date -u -d "$pin_date" +%s)
-            pin_age=$(( (now_seconds - pin_seconds) / 86400 ))
-            if (( pin_age > 10 )); then
-              health+="- Base-image pins are ${pin_age} days old; confirm Renovate is running.\\n"
+          # Age the pins from Renovate's own commits: a maintainer commit to
+          # Containerfile must not reset the "is Renovate alive?" clock.
+          if commits=$(gh api "repos/$GH_REPO/commits?path=Containerfile&per_page=100"); then
+            pin_date=$(jq -r '[.[] | select((.author.login // "") | test("^renovate"))][0].commit.committer.date // ""' \
+              <<<"$commits")
+            if [[ -z $pin_date ]]; then
+              alarm 'No Renovate commit to Containerfile in the last 100 commits; confirm Renovate is running.'
+            else
+              pin_seconds=$(date -u -d "$pin_date" +%s)
+              pin_age=$(( (now_seconds - pin_seconds) / 86400 ))
+              if (( pin_age > 10 )); then
+                health+="- Renovate last refreshed the base-image pins ${pin_age} days ago; confirm it is running.\\n"
+              fi
             fi
+          else
+            alarm 'Could not read Containerfile history; Renovate pin age is unknown.'
           fi
-          dashboard_date=$(gh issue list --state open --search 'in:title "Dependency Dashboard"' \
-            --json updatedAt --jq '.[0].updatedAt // ""' 2>/dev/null || true)
+          dashboard_date=$(jq -r '[.[] | select(.title == "Dependency Dashboard")][0].number // ""' <<<"$issues")
+          if [[ -z $dashboard_date ]]; then
+            [[ $issues == '[]' ]] || alarm 'Renovate Dependency Dashboard issue not found; Renovate may be disabled or uninstalled.'
+          else
+            dashboard_date=$(gh issue view "$dashboard_date" --json updatedAt --jq '.updatedAt') \
+              || { alarm 'Could not read the Dependency Dashboard.'; dashboard_date=''; }
+          fi
           if [[ -n $dashboard_date ]]; then
             dashboard_seconds=$(date -u -d "$dashboard_date" +%s)
             dashboard_age=$(( (now_seconds - dashboard_seconds) / 86400 ))
@@ -79,27 +108,43 @@ jobs:
             fi
           fi
 
-          run=$(gh run list --workflow build.yml --event schedule --limit 1 \
-            --json status,conclusion,url --jq '.[0]' 2>/dev/null || true)
-          if [[ -z $run || $run == null ]]; then
-            publish='No scheduled release run found; it normally starts Saturday at 10:05 UTC.'
+          # The newest scheduled run is only "this week's" if it is recent.
+          # GitHub often starts the 10:05 UTC cron hours late, so this
+          # cockpit can run first; never report last week's result as current.
+          if ! run=$(gh run list --workflow build.yml --event schedule --limit 1 \
+            --json status,conclusion,url,createdAt --jq '.[0]'); then
+            alarm 'Could not query build runs; weekly publish status is unknown.'
+            publish='_Unknown (query failed)._'
+          elif [[ -z $run || $run == null ]]; then
+            alarm 'No scheduled release run has ever been recorded for build.yml.'
+            publish='_No scheduled run found._'
           else
             status=$(jq -r '.status // ""' <<<"$run")
             conclusion=$(jq -r '.conclusion // ""' <<<"$run")
             url=$(jq -r '.url // ""' <<<"$run")
-            case "$status:$conclusion" in
-              completed:success) publish="Published successfully: [run](${url})." ;;
-              completed:*) publish="Release failed: [run](${url})." ;;
-              waiting:*) publish="Waiting for production-signing approval: [run](${url})." ;;
-              in_progress:*|queued:*) publish="Build, scan, or boot gates are running: [run](${url})." ;;
-              *) publish="Latest scheduled run (${status}): [run](${url})." ;;
-            esac
+            created=$(jq -r '.createdAt' <<<"$run")
+            run_age_hours=$(( (now_seconds - $(date -u -d "$created" +%s)) / 3600 ))
+            if (( run_age_hours > 8 * 24 )); then
+              alarm "No scheduled release run in $(( run_age_hours / 24 )) days. GitHub may have disabled schedules (60 days without repository activity) or the workflow is broken."
+              publish="_Missing._ Last scheduled run was ${created%%T*}: [run](${url})."
+            elif (( run_age_hours > 30 )); then
+              publish="No scheduled run in the last 30 hours; on a Saturday, this week's may simply not have started (GitHub often starts it hours late). Most recent, ${created%%T*}: ${status} ${conclusion} — [run](${url})."
+            else
+              case "$status:$conclusion" in
+                completed:success) publish="Published successfully: [run](${url})." ;;
+                completed:*) publish="Release failed (${conclusion}): [run](${url})." ;;
+                waiting:*) publish="Waiting for production-signing approval: [run](${url})." ;;
+                in_progress:*|queued:*) publish="Build, scan, or boot gates are running: [run](${url})." ;;
+                *) publish="Latest scheduled run (${status}): [run](${url})." ;;
+              esac
+            fi
           fi
 
           [[ -n $needs ]] || needs='- _none_'
           [[ -n $red ]] || red='- _none_'
           [[ -n $drift ]] || drift='- _none_'
-          [[ -n $health ]] || health='- _Renovate and pin-age signals are current._'
+          health="${alarms}${health}"
+          [[ -n $health ]] || health='- _Renovate and pin-age signals are current._\n'
 
           {
             printf '## Weekly repository cockpit — %s\n\n' "$today"
@@ -116,7 +161,7 @@ jobs:
             echo '**Red or blocked PRs**'
             echo
             printf '%s\n\n' "$red"
-            echo '**Vendored dependency/security drift**'
+            echo '**Upstream, drift and security alerts**'
             echo
             printf '%s\n\n' "$drift"
             printf '<sub>%s green Renovate PR(s) currently have auto-merge enabled. See [UPDATING.md](/%s/blob/main/UPDATING.md).</sub>\n' \
