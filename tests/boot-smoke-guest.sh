@@ -53,6 +53,7 @@ essential_units=(
     cockpit.socket
     bootc-fetch-apply-updates.timer
     emryk-update-nudge.timer
+    emryk-enforce-signed-origin.service
 )
 unit_files=()
 for unit in "${essential_units[@]}"; do
@@ -73,7 +74,20 @@ public_ports=$(firewall-offline-cmd --zone=public --list-ports)
 grep -Eq '<interface[[:space:]]+name="tailscale0"[[:space:]]*/>' \
     /etc/firewalld/zones/tailscale.xml
 
+# bootc-image-builder installs the deployment as ostree-unverified-registry;
+# emryk-enforce-signed-origin.service (part of multi-user.target, already
+# active above) must have switched it to signature-enforcing in place.
+bootc status --json > "$work_dir/bootc-status-enforced.json"
+jq -e '.spec.image.signature == "containerPolicy"' \
+    "$work_dir/bootc-status-enforced.json" >/dev/null
+rpm-ostree reload
+rpm-ostree status --json | jq -e --arg image "$expected_image" '
+    .deployments[] | select(.booted)
+    | ."container-image-reference" | startswith("ostree-image-signed:docker://" + $image)
+' >/dev/null
+
 jq empty /etc/containers/policy.json
+jq -e '.default == [{"type": "reject"}]' /etc/containers/policy.json >/dev/null
 mapfile -t key_paths < <(jq -r '
     [.. | objects | select(.type? == "sigstoreSigned") | .keyPaths[]?] | unique[]
 ' /etc/containers/policy.json)

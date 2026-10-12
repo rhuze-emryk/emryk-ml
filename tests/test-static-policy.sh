@@ -29,6 +29,17 @@ jq -e '
     and (.[0] | has("keyPath") | not)
 ' build_files/containers-policy.json >/dev/null
 
+# bootc refuses `switch --enforce-container-sigpolicy` when the top-level
+# default is insecureAcceptAnything, which silently leaves hosts on
+# ostree-unverified-registry. Other registries are allowed per transport.
+if ! jq -e '
+  .default == [{"type": "reject"}]
+    and .transports.docker[""] == [{"type": "insecureAcceptAnything"}]
+' build_files/containers-policy.json >/dev/null; then
+    echo >&2 "containers-policy.json default must be reject with a docker \"\" catch-all"
+    exit 1
+fi
+
 if grep -Eq 'cat[[:space:]]*>' build_files/build.sh; then
     echo >&2 "build.sh still generates installed files with heredocs"
     exit 1

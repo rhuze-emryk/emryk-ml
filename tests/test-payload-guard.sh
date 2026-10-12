@@ -7,6 +7,7 @@ mock_rpm=${repo_root}/tests/fixtures/rpm-unowned.sh
 
 "$guard" --is-allowlisted /usr/libexec/emryk/install-flatpaks.sh
 "$guard" --is-allowlisted /usr/libexec/emryk/update-nudge.sh
+"$guard" --is-allowlisted /usr/libexec/emryk/enforce-signed-origin.sh
 
 if "$guard" --is-allowlisted /usr/libexec/emryk/arbitrary; then
     echo >&2 "broad Emryk payload exception returned"
@@ -23,6 +24,7 @@ trap 'rm -rf -- "$fixture_root"' EXIT
 mkdir -p "$fixture_root/usr/libexec/emryk"
 touch "$fixture_root/usr/libexec/emryk/install-flatpaks.sh"
 touch "$fixture_root/usr/libexec/emryk/update-nudge.sh"
+touch "$fixture_root/usr/libexec/emryk/enforce-signed-origin.sh"
 touch "$fixture_root/usr/libexec/emryk/arbitrary"
 
 if output=$(PAYLOAD_ROOT=$fixture_root RPM_BIN=$mock_rpm "$guard" 2>&1); then
