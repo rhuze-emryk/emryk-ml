@@ -123,7 +123,9 @@ case "$variant" in
     nvidia)
         modinfo nvidia >/dev/null
         command -v nvidia-ctk >/dev/null
-        systemctl cat ublue-nvctk-cdi.service >/dev/null
+        # Upstream akmods retired ublue-nvctk-cdi.service (Aug 2026) for
+        # nvidia-container-toolkit's own nvidia-cdi-refresh.service.
+        systemctl is-enabled --quiet nvidia-cdi-refresh.service
         ;;
     intel)
         if modinfo nvidia >/dev/null 2>&1; then
