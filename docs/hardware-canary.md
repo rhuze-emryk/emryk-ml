@@ -26,7 +26,7 @@ kernel, and command results with the release run.
 4. Confirm boot-time CDI generation succeeded and the document parses:
 
    ```bash
-   systemctl status --no-pager ublue-nvctk-cdi.service
+   systemctl status --no-pager nvidia-cdi-refresh.service
    sudo nvidia-ctk cdi list
    sudo test -s /etc/cdi/nvidia.yaml
    ```

@@ -12,7 +12,7 @@ install -D -m 0644 /ctx/tailscale.repo \
 # NVIDIA Container Toolkit and its CDI generator are NOT installed here: the
 # base image's upstream akmods nvidia-install.sh already installs
 # `nvidia-container-toolkit` (signature-verified — it sets gpgcheck=1 on its
-# own toolkit repo) and enables `ublue-nvctk-cdi.service` to regenerate the
+# own toolkit repo) and enables `nvidia-cdi-refresh.service` to regenerate the
 # CDI spec at boot. Duplicating either here was a no-op install plus a second
 # oneshot racing upstream's unit to write /etc/cdi/nvidia.yaml. We rely on
 # upstream for both and pin the akmods image by digest.

@@ -77,7 +77,8 @@ selects the previous deployment while preserving state under `/var` and
   dependency; Headscale can provide a self-hosted coordination server.
 
 The NVIDIA image regenerates `/etc/cdi/nvidia.yaml` through the upstream
-`ublue-nvctk-cdi.service`. A typical rootless workload is:
+`nvidia-cdi-refresh.service` (shipped by `nvidia-container-toolkit`, enabled
+by the akmods install script). A typical rootless workload is:
 
 ```bash
 podman run --rm --device nvidia.com/gpu=all \

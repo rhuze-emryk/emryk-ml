@@ -18,7 +18,7 @@ The image already provides everything you need:
 | Component | Where it's set up |
 |---|---|
 | `nvidia-container-toolkit` | shipped on `:latest` (provided by upstream `ublue-os-nvidia-addons` via akmods) |
-| `/etc/cdi/nvidia.yaml` | regenerated at every boot by `ublue-nvctk-cdi.service` (upstream `ublue-os-nvidia-addons`) |
+| `/etc/cdi/nvidia.yaml` | regenerated at every boot by `nvidia-cdi-refresh.service` (`nvidia-container-toolkit`, enabled by upstream akmods) |
 | Rootless `podman.socket` | enabled globally (`build_files/build.sh`) |
 
 Quick sanity check:
