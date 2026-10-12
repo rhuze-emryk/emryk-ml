@@ -8,9 +8,9 @@ COPY cosign.pub /cosign.pub
 # Base images are pinned by digest so an upstream tag rewrite cannot silently
 # change what we build. The tag is kept for readability; the digest is what
 # the runtime verifies. Bump both together when intentionally rolling forward.
-FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.0.14-201.fc44.x86_64@sha256:b523ce150646722ab57aecdb54269451397ad03362d16fa3a483e49637da4331 AS akmods
+FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.2.9-200.fc44.x86_64@sha256:b7f276b51d2f6f07e9489392dbf517358d8cee6f6ebd6eeeb9e72901246715ef AS akmods
 
-FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:8602d4301c6436f40f2131b4d9ce083462ea31a0c90cd2169e246f3a7ff1e3ca AS kinoite
+FROM ghcr.io/ublue-os/kinoite-main:latest@sha256:d3bcb4a948fb09420d66e2deaaad82b1078b7f7f77d9d682d5a8ce1205a419cc AS kinoite
 
 # ---------------------------------------------------------------------------
 # intel: laptop/iGPU variant (published as emryk-ml-intel). Same payload and
