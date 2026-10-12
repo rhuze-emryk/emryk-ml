@@ -29,15 +29,14 @@ sudo bootc switch ghcr.io/rhuze-emryk/emryk-ml-intel:latest
 sudo systemctl reboot
 ```
 
-On every boot, `emryk-enforce-signed-origin.service` checks that the host's
-update source enforces the shipped signature policy, and switches it in place
-if not. No download and no extra reboot are needed. From the first Emryk boot
-onward, every update must carry a valid Emryk signature or it is refused.
-Confirm with:
-
-```bash
-rpm-ostree status   # expect ostree-image-signed:docker://ghcr.io/rhuze-emryk/…
-```
+From the first Emryk boot onward, every OS update must carry a valid Emryk
+signature or it is refused. The shipped `/etc/containers/policy.json` requires
+it for everything under `ghcr.io/rhuze-emryk`, and `bootc upgrade` applies that
+policy whatever the deployment's origin says. `rpm-ostree status` may show
+`ostree-unverified-registry:` after a plain `switch`; that prefix only means
+bootc skips one extra pre-flight check on the policy file, not that signatures
+are ignored. Each release is tested for this: the boot gate confirms the
+installed host refuses the not-yet-signed release candidate.
 
 The first `switch` itself cannot be verified by the host: the system you
 switch from does not have the Emryk key yet. To close that gap, verify the
@@ -47,10 +46,8 @@ the first boot, follow releases again with
 `sudo bootc switch --enforce-container-sigpolicy ghcr.io/rhuze-emryk/emryk-ml:latest`.
 That switch is verified, because the host now has the key.
 
-If the service logs `cannot enforce signatures` (`journalctl -u
-emryk-enforce-signed-origin`), `/etc/containers/policy.json` was modified
-locally and is masking the shipped policy. Compare it with
-`/usr/etc/containers/policy.json`.
+If `/etc/containers/policy.json` has been modified locally, it masks the shipped
+policy; compare it with `/usr/etc/containers/policy.json`.
 
 `bootc-fetch-apply-updates.timer` periodically fetches and stages a newer
 signed deployment. It does not initiate a reboot. A login message announces a
@@ -112,9 +109,9 @@ cosign verify \
 ```
 
 Installed hosts use `/etc/containers/policy.json` to require a matching
-signature for pulls under `ghcr.io/rhuze-emryk`. OS updates enforce it once the
-deployment is signature-enforcing, which `emryk-enforce-signed-origin.service`
-ensures on every boot (see [Install or switch](#install-or-switch)). The recovery signer is not an
+signature for pulls under `ghcr.io/rhuze-emryk`. OS updates enforce it
+regardless of whether the deployment origin reads `ostree-image-signed` or
+`ostree-unverified-registry` (see [Install or switch](#install-or-switch)). The recovery signer is not an
 operational host trust root until the offline custodian supplies and commits
 `recovery-cosign.pub`; that bootstrap is tracked as P0 in
 [SECURITY-TODO.md](SECURITY-TODO.md).

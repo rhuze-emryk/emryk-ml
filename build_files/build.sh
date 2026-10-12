@@ -39,8 +39,6 @@ install -D -m 0755 /ctx/usr/libexec/emryk/install-flatpaks.sh \
     /usr/libexec/emryk/install-flatpaks.sh
 install -D -m 0755 /ctx/usr/libexec/emryk/update-nudge.sh \
     /usr/libexec/emryk/update-nudge.sh
-install -D -m 0755 /ctx/usr/libexec/emryk/enforce-signed-origin.sh \
-    /usr/libexec/emryk/enforce-signed-origin.sh
 
 install -D -m 0644 /ctx/systemd/emryk-install-flatpaks.service \
     /etc/systemd/system/emryk-install-flatpaks.service
@@ -48,8 +46,6 @@ install -D -m 0644 /ctx/systemd/emryk-update-nudge.service \
     /etc/systemd/system/emryk-update-nudge.service
 install -D -m 0644 /ctx/systemd/emryk-update-nudge.timer \
     /etc/systemd/system/emryk-update-nudge.timer
-install -D -m 0644 /ctx/systemd/emryk-enforce-signed-origin.service \
-    /etc/systemd/system/emryk-enforce-signed-origin.service
 
 # SSH hardening — key-only auth, no root login over SSH. SSH is reachable over
 # the tailscale zone only (see the firewall config below, and #36), so this is
@@ -159,7 +155,6 @@ install -m 0644 /ctx/systemd/bootc-fetch-apply-updates.service.d/10-emryk.conf \
 systemctl enable \
     bootc-fetch-apply-updates.timer \
     cockpit.socket \
-    emryk-enforce-signed-origin.service \
     emryk-install-flatpaks.service \
     emryk-update-nudge.timer \
     flatpak-system-update.timer \

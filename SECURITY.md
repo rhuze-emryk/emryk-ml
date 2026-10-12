@@ -32,10 +32,10 @@ The release provides three complementary, independently inspectable artifacts:
 
 1. The Emryk cosign signature trusts the active public key in this repository.
    Installed hosts enforce it through one `sigstoreSigned` policy requirement
-   whose `keyPaths` are alternatives. An `ostree-unverified-registry`
-   deployment does not consult the policy for OS updates, so
-   `emryk-enforce-signed-origin.service` switches the booted deployment to
-   signature-enforcing in place on every boot. The very first pull onto a
+   whose `keyPaths` are alternatives. OS updates apply that policy whether
+   the deployment origin is `ostree-image-signed` or
+   `ostree-unverified-registry`; the boot gate verifies each release candidate
+   is refused by the installed host while still unsigned. The very first pull onto a
    non-Emryk host cannot be verified by that host. The offline recovery public key becomes a
    second permanent alternative only after its explicit bootstrap transition.
 2. Build provenance trusts the GitHub Actions OIDC workload identity and the
@@ -59,7 +59,7 @@ consistent malicious artifacts.
 | Base images and CI dependencies | Container bases, BIB, and Actions are digest/full-SHA pinned; Renovate proposes updates. Every `ghcr.io/ublue-os` base digest must carry a valid Universal Blue cosign signature (vendored keys in `upstream-keys/`, weekly drift check) before it is built on | Upstream's signature proves origin, not safety: content Universal Blue signs can still be vulnerable or malicious |
 | Tailscale packages | Repository configuration and OpenPGP key are vendored; DNF uses a local `file://` key; weekly drift checks compare both | The build still downloads RPMs and metadata from Tailscale's HTTPS repository; its signing-key custody remains upstream trust |
 | Vulnerability gate | Grype blocks unwaived critical findings in the RPM-derived SBOM; waivers are reviewed and dated | Severity data and distro matching can be incomplete; non-RPM/configuration defects are not covered by this scan |
-| Executable payload | Build guard rejects unowned executable files except exact reviewed paths and documented generated base artifacts | `/usr/libexec/emryk/install-flatpaks.sh`, `update-nudge.sh` and `enforce-signed-origin.sh` are source-controlled exceptions; configuration outside scanned payload directories is not an RPM component |
+| Executable payload | Build guard rejects unowned executable files except exact reviewed paths and documented generated base artifacts | `/usr/libexec/emryk/install-flatpaks.sh` and `update-nudge.sh` are source-controlled exceptions; configuration outside scanned payload directories is not an RPM component |
 | Boot assurance | Both exact staged digests must reach multi-user console login and pass policy, unit, firewall, SSH, SELinux, and variant assertions in a hosted VM | Hosted runners provide no physical NVIDIA device; runtime driver/GPU behavior needs the hardware canary |
 | SSH | Shipped effective configuration disables root, password, empty-password, and keyboard-interactive login | Console access, administrator drop-ins, cloud provisioning, or later local changes can alter access |
 | Firewall | Shipped `public` zone omits SSH and Cockpit; `tailscale0` is assigned to an accepting zone | Existing NetworkManager profiles and administrator changes may select other zones; the Tailscale zone intentionally exposes locally bound services to tailnet peers |

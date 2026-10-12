@@ -53,7 +53,6 @@ essential_units=(
     cockpit.socket
     bootc-fetch-apply-updates.timer
     emryk-update-nudge.timer
-    emryk-enforce-signed-origin.service
 )
 unit_files=()
 for unit in "${essential_units[@]}"; do
@@ -74,17 +73,24 @@ public_ports=$(firewall-offline-cmd --zone=public --list-ports)
 grep -Eq '<interface[[:space:]]+name="tailscale0"[[:space:]]*/>' \
     /etc/firewalld/zones/tailscale.xml
 
-# bootc-image-builder installs the deployment as ostree-unverified-registry;
-# emryk-enforce-signed-origin.service (part of multi-user.target, already
-# active above) must have switched it to signature-enforcing in place.
-bootc status --json > "$work_dir/bootc-status-enforced.json"
-jq -e '.spec.image.signature == "containerPolicy"' \
-    "$work_dir/bootc-status-enforced.json" >/dev/null
-rpm-ostree reload
-rpm-ostree status --json | jq -e --arg image "$expected_image" '
-    .deployments[] | select(.booted)
-    | ."container-image-reference" | startswith("ostree-image-signed:docker://" + $image)
-' >/dev/null
+# The real protection test. OS updates go through ostree's container importer
+# with /etc/containers/policy.json, whether the deployment's origin says
+# ostree-image-signed or ostree-unverified-registry (bootc 1.16: the latter
+# only skips a pre-flight check on the policy default). At this point in the
+# release the staged digest this VM booted from is NOT yet signed, so the
+# guest's own policy must refuse to pull it, with a signature error rather
+# than a network one. This exercises the exact code path `bootc upgrade` uses.
+sig_repo="$work_dir/sigcheck-repo"
+ostree --repo="$sig_repo" init --mode=bare-user
+if pull_output=$(ostree container image pull "$sig_repo" \
+    "ostree-unverified-registry:${expected_source}" 2>&1); then
+    echo >&2 "host policy ACCEPTED an unsigned image: ${expected_source}"
+    exit 1
+fi
+grep -Fq 'A signature was required, but no signature exists' <<<"$pull_output" || {
+    echo >&2 "unsigned pull failed for the wrong reason: ${pull_output}"
+    exit 1
+}
 
 jq empty /etc/containers/policy.json
 jq -e '.default == [{"type": "reject"}]' /etc/containers/policy.json >/dev/null
