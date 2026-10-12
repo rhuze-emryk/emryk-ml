@@ -211,6 +211,20 @@ jobs:
           find build_files scripts tests -type f -name '*.sh' -print0 \
             | xargs -0 -r shellcheck
 
+      - name: Install Cosign
+        if: steps.changes.outputs.build == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Same deliberate hold as the publish job (see renovate.json).
+          cosign-release: 'v3.0.6'
+
+      # Renovate auto-merges base digest refreshes and we re-sign the result
+      # with our key, so check Universal Blue's own signature on each exact
+      # pinned digest before building on it.
+      - name: Verify upstream base image signatures
+        if: steps.changes.outputs.build == 'true'
+        run: scripts/verify-upstream-base-signatures.sh
+
       # This is optional, but if you see that your builds are way too big for the runners, you can enable this by uncommenting the following lines:
       - name: Maximize build space
         if: steps.changes.outputs.build == 'true'
@@ -754,6 +768,14 @@ jobs:
             --key cosign.pub \
             --new-bundle-format=false \
             "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
+
+      # cosign is a proxy: hosts verify through containers/image with the
+      # shipped policy. Gate promotion on the host path too, so a signature
+      # hosts would refuse never reaches a release tag.
+      - name: Verify as an enforcing host would
+        env:
+          FEDORA_TOOLS_IMAGE: registry.fedoraproject.org/fedora:44@sha256:1ff9eb02e4e2d7fb1175becac7139b2960c4fdcccedce81c86ec25b98ef3124d
+        run: scripts/verify-host-signature-policy.sh "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
 
       # Manifest-only, same-repository copies happen only after the staged
       # digest's active-key signature has been verified. --preserve-digests
