@@ -114,3 +114,64 @@ jobs:
           else
             gh issue create --title "$title" --body-file /tmp/key-issue.md
           fi
+
+  ublue-keys:
+    name: Check Universal Blue image signing keys
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      KEY_BASE_URL: https://raw.githubusercontent.com/ublue-os/packages/main/packages/ublue-os-signing/src/etc/pki/containers
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # build.yml verifies every ublue-os base digest against these vendored
+      # keys (scripts/verify-upstream-base-signatures.sh). A change upstream is
+      # either a rotation we must review or a compromise we must not follow.
+      - name: Compare vendored keys with upstream
+        id: keys
+        run: |
+          set -euo pipefail
+          : > /tmp/ublue-keys.md
+          drifted=false
+          for key in ublue-os.pub ublue-os-backup.pub; do
+            if ! curl -fsSL "$KEY_BASE_URL/$key" --output "/tmp/$key"; then
+              echo "- \`$key\`: could not fetch upstream copy (moved or deleted?)" >> /tmp/ublue-keys.md
+              drifted=true
+            elif ! cmp -s "upstream-keys/$key" "/tmp/$key"; then
+              {
+                echo "- \`$key\` changed"
+                echo "  - vendored SHA-256: \`$(sha256sum "upstream-keys/$key" | cut -d' ' -f1)\`"
+                echo "  - upstream SHA-256: \`$(sha256sum "/tmp/$key" | cut -d' ' -f1)\`"
+              } >> /tmp/ublue-keys.md
+              drifted=true
+            fi
+          done
+          echo "drifted=$drifted" >> "$GITHUB_OUTPUT"
+          cat /tmp/ublue-keys.md
+
+      - name: Open or update signing-key security review
+        if: steps.keys.outputs.drifted == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title='SECURITY REVIEW: Universal Blue image signing key changed'
+          {
+            echo 'The Universal Blue cosign keys published upstream no longer match `upstream-keys/`, which `build.yml` uses to verify every `ghcr.io/ublue-os` base digest.'
+            echo
+            cat /tmp/ublue-keys.md
+            echo
+            echo "Source: ${KEY_BASE_URL}"
+            echo
+            echo '**Do not update the vendored keys automatically.** Confirm the rotation through an independent Universal Blue channel (announcement, the key in `ublue-os/main` `cosign.pub`, maintainers), then land the new key in a security-reviewed pull request. Until then, builds keep verifying against the old key and will fail once upstream signs only with the new one.'
+          } > /tmp/ublue-key-issue.md
+          # Exact title match: GitHub issue search is fuzzy full-text.
+          existing=$(gh issue list --state open --limit 300 --json number,title \
+            | jq -r --arg t "$title" 'map(select(.title == $t))[0].number // ""')
+          if [[ -n $existing ]]; then
+            gh issue edit "$existing" --body-file /tmp/ublue-key-issue.md
+          else
+            gh issue create --title "$title" --body-file /tmp/ublue-key-issue.md
+          fi

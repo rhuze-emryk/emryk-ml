@@ -107,6 +107,18 @@
       ],
       "depNameTemplate": "quay.io/centos-bootc/bootc-image-builder",
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track the digest-pinned Fedora image build.yml uses to verify releases the way an enforcing host does (scripts/verify-host-signature-policy.sh).",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "FEDORA_TOOLS_IMAGE:\\s*\"?registry\\.fedoraproject\\.org/fedora:(?<currentValue>[^@\"\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "depNameTemplate": "registry.fedoraproject.org/fedora",
+      "datasourceTemplate": "docker"
     }
   ]
 }

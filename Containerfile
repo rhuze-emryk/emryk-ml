@@ -7,7 +7,9 @@ COPY cosign.pub /cosign.pub
 
 # Base images are pinned by digest so an upstream tag rewrite cannot silently
 # change what we build. The tag is kept for readability; the digest is what
-# the runtime verifies. Bump both together when intentionally rolling forward.
+# the build pulls. A pin alone does not prove origin: build.yml checks
+# Universal Blue's cosign signature on each digest (upstream-keys/) first.
+# Bump tag and digest together when intentionally rolling forward.
 FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.2.9-200.fc44.x86_64@sha256:b7f276b51d2f6f07e9489392dbf517358d8cee6f6ebd6eeeb9e72901246715ef AS akmods
 
 # kinoite-main tracks the Fedora major (:44), not :latest. Upstream moves
