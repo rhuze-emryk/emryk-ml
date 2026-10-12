@@ -1,0 +1,84 @@
+name: Upstream Fedora release watch
+
+# kinoite-main is pinned to a Fedora major tag (e.g. :44) in Containerfile, so
+# a new Fedora release never arrives through Renovate. This job notices when
+# upstream's :latest has moved to a newer major and opens a tracking issue, so
+# the migration is a deliberate, reviewed PR rather than a surprise.
+
+on:
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  fedora-major:
+    name: Compare pinned Fedora major with kinoite-main:latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      IMAGE: ghcr.io/ublue-os/kinoite-main
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Read pinned and upstream Fedora majors
+        id: majors
+        run: |
+          set -euo pipefail
+          pinned=$(grep -oP 'kinoite-main:\K[0-9]+(?=@)' Containerfile || true)
+          if [[ -z $pinned ]]; then
+            echo "::error::Could not parse a numeric kinoite-main tag from Containerfile — is it pinned to a Fedora major?"
+            exit 1
+          fi
+          # org.opencontainers.image.version looks like 44.20261012.1
+          latest_version=$(skopeo inspect --no-tags "docker://${IMAGE}:latest" \
+            | jq -r '.Labels["org.opencontainers.image.version"]')
+          latest=${latest_version%%.*}
+          if [[ ! $latest =~ ^[0-9]+$ ]]; then
+            echo "::error::Unexpected version label on ${IMAGE}:latest: ${latest_version}"
+            exit 1
+          fi
+          echo "pinned Fedora major : ${pinned}"
+          echo "upstream :latest    : ${latest_version}"
+          {
+            echo "pinned=$pinned"
+            echo "latest=$latest"
+            echo "latest_version=$latest_version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update Fedora migration issue
+        if: fromJSON(steps.majors.outputs.latest) > fromJSON(steps.majors.outputs.pinned)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED: ${{ steps.majors.outputs.pinned }}
+          LATEST: ${{ steps.majors.outputs.latest }}
+          LATEST_VERSION: ${{ steps.majors.outputs.latest_version }}
+        run: |
+          set -euo pipefail
+          title="Fedora ${LATEST} is live on kinoite-main:latest (pinned to ${PINNED})"
+          {
+            echo "\`${IMAGE}:latest\` now reports version \`${LATEST_VERSION}\`. Containerfile is still pinned to Fedora ${PINNED}."
+            echo
+            echo 'Nothing has changed in our builds — this is a heads-up to plan the migration. Suggested PR:'
+            echo
+            echo "- [ ] Bump \`kinoite-main:${PINNED}\` to \`kinoite-main:${LATEST}\` and re-pin its digest"
+            echo "- [ ] Bump \`akmods-nvidia-open:main-${PINNED}-<kver>\` to the matching \`main-${LATEST}-<kver>\` tag (same kernel as the new base)"
+            echo '- [ ] Fix the hard-coded `main-44-` hint in the build.yml kernel-coupling error message'
+            echo '- [ ] Check dnf-layered packages and third-party repos (Tailscale etc.) publish for the new release'
+            echo '- [ ] Dispatch a full build so boot smoke runs on both variants before Saturday publish'
+            echo
+            echo 'Upstream usually stabilizes for a week or two after the switch; there is no need to migrate on day one.'
+          } > /tmp/fedora-issue.md
+          existing=$(gh issue list --state open --search "in:title \"is live on kinoite-main:latest\"" \
+            --json number --jq '.[0].number // ""')
+          if [[ -n $existing ]]; then
+            gh issue edit "$existing" --title "$title" --body-file /tmp/fedora-issue.md
+          else
+            gh issue create --title "$title" --body-file /tmp/fedora-issue.md \
+              --assignee rhuze-emryk --label dependencies
+          fi
