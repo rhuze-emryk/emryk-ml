@@ -54,7 +54,7 @@ env:
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"  # do not edit
   DEFAULT_TAG: "latest"
   # Pinned for reproducibility; bumped by Renovate.
-  GRYPE_VERSION: "v0.120.1"
+  GRYPE_VERSION: "v0.121.0"
   SYFT_VERSION: "v1.55.0"
 
 concurrency:
