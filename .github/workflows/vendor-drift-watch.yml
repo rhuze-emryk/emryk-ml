@@ -12,7 +12,7 @@ permissions:
 jobs:
   tailscale:
     name: Check Tailscale repository and signing key
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     env:
       REPO_URL: https://pkgs.tailscale.com/stable/fedora/tailscale.repo
@@ -119,7 +119,7 @@ jobs:
 
   ublue-keys:
     name: Check Universal Blue image signing keys
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     env:
       KEY_BASE_URL: https://raw.githubusercontent.com/ublue-os/packages/main/packages/ublue-os-signing/src/etc/pki/containers

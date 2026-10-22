@@ -26,7 +26,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       (contains(github.event.workflow_run.head_commit.author.email, 'renovate') ||
        contains(github.event.workflow_run.head_commit.author.name, 'renovate'))
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Comment on the Renovate activity log (#36)
         env:

@@ -87,7 +87,7 @@ jobs:
   # here is what keeps all of them binding.
   workflow_policy:
     name: Workflow policy checks
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -110,7 +110,7 @@ jobs:
     # (nvidia)" and "Build and scan image (intel)". Rename them together or
     # PRs can never merge.
     name: Build and scan image (${{ matrix.variant }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     strategy:
       fail-fast: false
@@ -551,7 +551,7 @@ jobs:
     name: Boot staged image (${{ matrix.variant }})
     needs: build_scan
     if: needs.build_scan.outputs.publish == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -683,7 +683,7 @@ jobs:
   # and booted successfully. Signing secrets are environment-scoped.
   publish:
     name: Sign and publish image (${{ matrix.variant }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Both matrix legs of both prerequisite jobs must pass before the
     # production-signing approval can appear.
     needs: [build_scan, boot_smoke]
