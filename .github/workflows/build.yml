@@ -774,7 +774,7 @@ jobs:
       # hosts would refuse never reaches a release tag.
       - name: Verify as an enforcing host would
         env:
-          FEDORA_TOOLS_IMAGE: registry.fedoraproject.org/fedora:44@sha256:74e857c33dfb387710b2b1a0203824351a25e9844356af2d1e5792ca2a96129b
+          FEDORA_TOOLS_IMAGE: registry.fedoraproject.org/fedora:44@sha256:b96f024cecbe9515eb049107d2856e7ad923f7aac09a3c90e7a0d52a46fa3454
         run: scripts/verify-host-signature-policy.sh "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
 
       # Manifest-only, same-repository copies happen only after the staged
