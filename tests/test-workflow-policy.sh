@@ -21,6 +21,17 @@ while IFS= read -r uses_line; do
     }
 done < <(grep -rhE '^[[:space:]]*uses:[[:space:]]+[^./][^@]*@' "$workflow_dir")
 
+# bootc-image-builder (osbuild) cannot mount its container storage on the
+# ubuntu-26.04 runner (publish run 40100046408, 2026-10-24). The two jobs that
+# run it stay on 24.04 until a green build-disk run proves a newer runner.
+bib_runner='ubuntu-24.04'
+boot_smoke_runner=$(awk '/^  boot_smoke:$/ {in_job=1} in_job && /^[[:space:]]+runs-on:/ {print $2; exit}' "$workflow_dir/build.yml")
+disk_runner=$(awk '/^  build:$/ {in_job=1} in_job && /^[[:space:]]+runs-on:/ {print $2; exit}' "$workflow_dir/build-disk.yml")
+if [[ $boot_smoke_runner != "$bib_runner" || $disk_runner != "$bib_runner" ]]; then
+    echo >&2 "bootc-image-builder jobs must run on ${bib_runner} (boot_smoke: ${boot_smoke_runner:-missing}, build-disk: ${disk_runner:-missing})."
+    exit 1
+fi
+
 disk_workflow=$workflow_dir/build-disk.yml
 grep -Fq 'variant:' "$disk_workflow"
 grep -Fq 'source-tag:' "$disk_workflow"

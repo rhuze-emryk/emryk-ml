@@ -39,7 +39,10 @@ concurrency:
 jobs:
   build:
     name: Build AMD64 QCOW2 (${{ inputs.variant || 'nvidia' }})
-    runs-on: ubuntu-26.04
+    # Held on 24.04: bootc-image-builder (osbuild) fails on ubuntu-26.04 with
+    # "mount: /run/osbuild/containers/storage: permission denied". See the
+    # boot_smoke job in build.yml; renovate.json holds the runner below v26.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read

@@ -551,7 +551,11 @@ jobs:
     name: Boot staged image (${{ matrix.variant }})
     needs: build_scan
     if: needs.build_scan.outputs.publish == 'true'
-    runs-on: ubuntu-26.04
+    # Held on 24.04: bootc-image-builder (osbuild) fails on the ubuntu-26.04
+    # runner with "mount: /run/osbuild/containers/storage: permission denied"
+    # (publish run 40100046408, 2026-10-24). renovate.json holds the ubuntu
+    # runner below v26 and tests/test-workflow-policy.sh asserts this pin.
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false

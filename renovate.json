@@ -60,6 +60,16 @@
       "pinDigests": false
     },
     {
+      "description": "Hold the GitHub-hosted ubuntu runner below v26 for the jobs that run bootc-image-builder (boot_smoke in build.yml, build in build-disk.yml). On ubuntu-26.04 osbuild fails with 'mount: /run/osbuild/containers/storage: permission denied', which broke the 2026-10-24 weekly publish at the boot-smoke gate. The other jobs already on 26.04 are unaffected (Renovate never downgrades). Lift only after a green build-disk run on the newer runner.",
+      "matchDatasources": [
+        "github-runners"
+      ],
+      "matchDepNames": [
+        "ubuntu"
+      ],
+      "allowedVersions": "<26"
+    },
+    {
       "description": "Auto-merge container base-image digest refreshes once CI is green. The kernel<->akmods coupling check in build.yml is the safety interlock: a kinoite-main bump that moves the kernel fails until the akmods tag is updated. Tag/version changes are never auto-merged. Customer machines fetch and stage without rebooting.",
       "matchDatasources": [
         "docker"
