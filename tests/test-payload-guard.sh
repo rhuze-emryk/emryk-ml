@@ -8,6 +8,14 @@ mock_rpm=${repo_root}/tests/fixtures/rpm-unowned.sh
 "$guard" --is-allowlisted /usr/libexec/emryk/install-flatpaks.sh
 "$guard" --is-allowlisted /usr/libexec/emryk/update-nudge.sh
 
+# ublue-os/main#3029 units are allowlisted by exact name only.
+"$guard" --is-allowlisted /usr/lib/systemd/system/bootc-update-ca-trust.service
+"$guard" --is-allowlisted /usr/lib/systemd/system/bootc-update-crypto-policies.service
+if "$guard" --is-allowlisted /usr/lib/systemd/system/bootc-update-other.service; then
+    echo >&2 "broad bootc-update unit exception returned"
+    exit 1
+fi
+
 if "$guard" --is-allowlisted /usr/libexec/emryk/arbitrary; then
     echo >&2 "broad Emryk payload exception returned"
     exit 1
