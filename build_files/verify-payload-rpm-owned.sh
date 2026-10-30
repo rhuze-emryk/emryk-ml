@@ -62,6 +62,15 @@ readonly ALLOWLIST_REGEX=(
   '^/usr/lib/systemd/journald\.conf\.d/10-persistent\.conf$'
   '^/usr/lib/systemd/user/app-(chromiumx2dbrowser|glib-chromiumx2dbrowser|glib-googlex2dchrome|gnome-chromiumx2dbrowser|gnome-googlex2dchrome|googlex2dchrome)'
 
+  # ublue-os/main sys_files additions (not RPM-packaged upstream, copied into
+  # the base image by its build). Added in ublue-os/main#3029 (2026-10-26) for
+  # the eMudhra CA incident: oneshot units that re-run `update-ca-trust
+  # extract` and `update-crypto-policies --set` at boot, because the /etc
+  # three-way merge can leave a host on stale trust/crypto backends even after
+  # the RPMs update. Adapted from fedora/bootc/base-images MR 663. Exact
+  # names only; any other unowned unit must still fail.
+  '^/usr/lib/systemd/system/bootc-update-(ca-trust|crypto-policies)\.service$'
+
   # Atomic-desktop dracut configs + bootupd JSON manifests, both
   # post-install scriptlet output.
   '^/usr/lib/dracut/dracut\.conf\.d/(10-compression|20-atomic-)'
