@@ -17,6 +17,15 @@ if grep -Eqi '(nouveau|nvidia)' <<<"$intel_stage"; then
 fi
 
 grep -Fq '/ctx/modprobe.d/blacklist-nouveau.conf' Containerfile
+
+# GPU-less boots must still reach multi-user.target: both NVIDIA units carry
+# a widened start-limit window, installed by the nvidia stage only.
+for unit in nvidia-cdi-refresh.service nvidia-persistenced.service; do
+    drop_in=build_files/systemd/${unit}.d/20-emryk-start-limit.conf
+    grep -Eq '^StartLimitIntervalSec=120s$' "$drop_in"
+    grep -Eq '^StartLimitBurst=5$' "$drop_in"
+    grep -Fq "/ctx/systemd/${unit}.d/20-emryk-start-limit.conf" Containerfile
+done
 grep -Fq 'gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-tailscale' \
     build_files/tailscale.repo
 gpg --batch --show-keys build_files/tailscale-repo.gpg >/dev/null

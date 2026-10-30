@@ -126,6 +126,16 @@ case "$variant" in
         # Upstream akmods retired ublue-nvctk-cdi.service (Aug 2026) for
         # nvidia-container-toolkit's own nvidia-cdi-refresh.service.
         systemctl is-enabled --quiet nvidia-cdi-refresh.service
+        # The Emryk start-limit drop-ins must be in effect: without them a
+        # GPU-less boot never reaches multi-user.target (restart loop), which
+        # is what the wait at the top of this script would have caught.
+        for unit in nvidia-cdi-refresh.service nvidia-persistenced.service; do
+            [[ $(systemctl show -p StartLimitIntervalUSec --value "$unit") == 2min ]] || {
+                echo >&2 "start-limit drop-in not applied: $unit"
+                exit 1
+            }
+            [[ $(systemctl show -p StartLimitBurst --value "$unit") == 5 ]]
+        done
         ;;
     intel)
         if modinfo nvidia >/dev/null 2>&1; then

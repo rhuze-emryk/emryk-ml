@@ -74,6 +74,19 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     install -D -m 0644 /ctx/modprobe.d/blacklist-nouveau.conf \
     /usr/lib/modprobe.d/blacklist-nouveau.conf
 
+# Without a GPU (release-gate VM, or hardware where the driver cannot bind)
+# nvidia-cdi-refresh.service and nvidia-persistenced.service restart forever:
+# upstream's 5-per-10s start limit never trips when one attempt takes >2 s,
+# and multi-user.target is implicitly After= both, so it never activates.
+# Count the same 5 attempts over 2 min instead. See the drop-ins for detail.
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    install -D -m 0644 \
+    /ctx/systemd/nvidia-cdi-refresh.service.d/20-emryk-start-limit.conf \
+    /etc/systemd/system/nvidia-cdi-refresh.service.d/20-emryk-start-limit.conf && \
+    install -D -m 0644 \
+    /ctx/systemd/nvidia-persistenced.service.d/20-emryk-start-limit.conf \
+    /etc/systemd/system/nvidia-persistenced.service.d/20-emryk-start-limit.conf
+
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
