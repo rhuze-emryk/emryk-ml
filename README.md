@@ -85,6 +85,12 @@ podman run --rm --device nvidia.com/gpu=all \
   docker.io/nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
 ```
 
+On a machine without a usable NVIDIA GPU the image's `nvidia-cdi-refresh` and
+`nvidia-persistenced` units fail and give up after five attempts within two
+minutes (Emryk drop-ins), so `multi-user.target` still becomes active; the
+upstream 10-second window never fills on slow hardware and left the target
+pending forever.
+
 Hosted CI validates module metadata, toolkit presence, and the CDI unit, but
 has no physical GPU. Hardware validation remains a release-assurance gap; see
 [the NVIDIA hardware-canary runbook](docs/hardware-canary.md).
