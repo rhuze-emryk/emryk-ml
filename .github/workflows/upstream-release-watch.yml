@@ -76,7 +76,6 @@ jobs:
             echo
             echo "- [ ] Bump \`kinoite-main:${PINNED}\` to \`kinoite-main:${LATEST}\` and re-pin its digest"
             echo "- [ ] Bump \`akmods-nvidia-open:main-${PINNED}-<kver>\` to the matching \`main-${LATEST}-<kver>\` tag (same kernel as the new base)"
-            echo '- [ ] Fix the hard-coded `main-44-` hint in the build.yml kernel-coupling error message'
             echo '- [ ] Check dnf-layered packages and third-party repos (Tailscale etc.) publish for the new release'
             echo '- [ ] Dispatch a full build so boot smoke runs on both variants before Saturday publish'
             echo

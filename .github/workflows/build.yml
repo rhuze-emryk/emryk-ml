@@ -289,7 +289,7 @@ jobs:
             --target=${{ matrix.variant }}
 
       # The akmods-nvidia-open base ships kernel modules PRE-BUILT for one
-      # specific kernel, encoded in its tag (…:main-44-<kver>…). kinoite-main
+      # specific kernel, encoded in its tag (…:main-<major>-<kver>…). kinoite-main
       # rolls its kernel forward independently, and Renovate's pinDigests can
       # only bump the akmods *digest* — never the <kver> in the tag string. So
       # a base bump can silently pair a new kernel with old modules: the build
@@ -305,7 +305,8 @@ jobs:
           # Kernel baked into the akmods-nvidia-open tag in Containerfile,
           # e.g. main-44-7.0.4-200.fc44.x86_64 -> 7.0.4-200.fc44.x86_64
           akmods_kver=$(grep -oP 'akmods-nvidia-open:main-[0-9]+-\K[^@[:space:]]+' Containerfile || true)
-          if [ -z "$akmods_kver" ]; then
+          akmods_major=$(grep -oP 'akmods-nvidia-open:main-\K[0-9]+' Containerfile || true)
+          if [ -z "$akmods_kver" ] || [ -z "$akmods_major" ]; then
             echo "::error::Could not parse the akmods-nvidia-open kernel from Containerfile — has the FROM line format changed?"
             exit 1
           fi
@@ -318,7 +319,7 @@ jobs:
           echo "akmods tag kernel : ${akmods_kver}"
           echo "base image kernel : ${image_kver}"
           if [ "$akmods_kver" != "$image_kver" ]; then
-            echo "::error::kinoite-main now ships kernel ${image_kver} but the akmods-nvidia-open tag in Containerfile is pinned to ${akmods_kver}. The prebuilt NVIDIA modules won't match the running kernel (black screen on boot). Bump the akmods tag to main-44-${image_kver} and let Renovate re-pin its digest."
+            echo "::error::kinoite-main now ships kernel ${image_kver} but the akmods-nvidia-open tag in Containerfile is pinned to ${akmods_kver}. The prebuilt NVIDIA modules won't match the running kernel (black screen on boot). Bump the akmods tag to main-${akmods_major}-${image_kver} and let Renovate re-pin its digest."
             exit 1
           fi
           echo "✓ NVIDIA akmods kernel matches base image kernel (${image_kver})"
