@@ -10,14 +10,14 @@ COPY cosign.pub /cosign.pub
 # the build pulls. A pin alone does not prove origin: build.yml checks
 # Universal Blue's cosign signature on each digest (upstream-keys/) first.
 # Bump tag and digest together when intentionally rolling forward.
-FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44-7.2.13-200.fc44.x86_64@sha256:03032e81825af2619da05d0e3d97a73ee732d4e4ed66a6359ca53a41a1245b56 AS akmods
+FROM ghcr.io/ublue-os/akmods-nvidia-open:main-45-7.2.11-300.fc45.x86_64@sha256:188d89aeec3dd88587f950f58e8479be4581a25b59b907f6569f0b8e899830bc AS akmods
 
-# kinoite-main tracks the Fedora major (:44), not :latest. Upstream moves
+# kinoite-main tracks the Fedora major (:45), not :latest. Upstream moves
 # :latest to a new Fedora release a few weeks after it ships, and Renovate
 # would deliver that as an auto-merged "digest" refresh. A Fedora major move
-# must be a deliberate PR that bumps this tag and the akmods -44- tag together;
+# must be a deliberate PR that bumps this tag and the akmods -45- tag together;
 # upstream-release-watch.yml opens an issue when :latest moves past this pin.
-FROM ghcr.io/ublue-os/kinoite-main:44@sha256:1874e4b07ceddac7313d9e14666bcfc35851c7ca858ab7236af1868a289304ab AS kinoite
+FROM ghcr.io/ublue-os/kinoite-main:45@sha256:45448512ab7f1a3f3e9c6e25de2c214375652684c6e7132b59a1c4a30932aeb7 AS kinoite
 
 # ---------------------------------------------------------------------------
 # intel: laptop/iGPU variant (published as emryk-ml-intel). Same payload and

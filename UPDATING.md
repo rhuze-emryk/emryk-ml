@@ -108,7 +108,7 @@ Kinoite kernel and akmods tag differ.
 When that happens:
 
 1. Read the built image's reported kernel version in the failed job.
-2. Change the `akmods-nvidia-open:main-44-<kernel>` tag in `Containerfile` to
+2. Change the `akmods-nvidia-open:main-<major>-<kernel>` tag in `Containerfile` to
    that exact version.
 3. Let Renovate update the new tag's digest, or independently resolve and review
    the digest before committing it.
