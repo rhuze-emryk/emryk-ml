@@ -19,6 +19,10 @@ diagnose() {
     exit "$exit_code"
 }
 trap diagnose EXIT
+# Name the failing check. Most assertions below are bare test expressions
+# that exit silently under set -e; without this the only evidence is the
+# journal dump (2026-11-01 F45 publish: an hour to find a grep).
+trap 'echo >&2 "smoke check failed at line ${LINENO}: ${BASH_COMMAND}"' ERR
 
 work_dir=$(mktemp -d /tmp/emryk-boot-smoke.XXXXXXXX)
 trap 'rm -rf -- "$work_dir"' RETURN
@@ -42,10 +46,12 @@ grep -Fq "$expected_image" "$work_dir/bootc-status.json"
 sshd -t
 sshd -T -C user=ci-smoke,host=localhost,addr=127.0.0.1 \
     > "$work_dir/sshd-effective.txt"
-grep -Eq '^permitrootlogin no$' "$work_dir/sshd-effective.txt"
-grep -Eq '^passwordauthentication no$' "$work_dir/sshd-effective.txt"
-grep -Eq '^kbdinteractiveauthentication no$' "$work_dir/sshd-effective.txt"
-grep -Eq '^permitemptypasswords no$' "$work_dir/sshd-effective.txt"
+# Case-insensitive: OpenSSH <= 9.x printed `sshd -T` keywords lowercased,
+# OpenSSH 10.5 (Fedora 45) prints them in canonical CamelCase.
+grep -Eiq '^permitrootlogin no$' "$work_dir/sshd-effective.txt"
+grep -Eiq '^passwordauthentication no$' "$work_dir/sshd-effective.txt"
+grep -Eiq '^kbdinteractiveauthentication no$' "$work_dir/sshd-effective.txt"
+grep -Eiq '^permitemptypasswords no$' "$work_dir/sshd-effective.txt"
 
 essential_units=(
     sshd.service
@@ -146,8 +152,13 @@ case "$variant" in
             echo >&2 'Intel image contains NVIDIA Container Toolkit.'
             exit 1
         fi
-        if rpm -qa | grep -Eq '^(akmod|kmod|xorg-x11-drv-nvidia|nvidia-container)'; then
-            echo >&2 'Intel image contains an NVIDIA driver-stack package.'
+        # Capture, don't `grep -q` inside `if`: with pipefail, grep -q exiting
+        # early kills rpm with SIGPIPE (status 141), the `if` swallows it and
+        # the check passed vacuously. The old `kmod` alternative also matched
+        # Fedora's plain kmod/kmod-libs, which every image ships.
+        nvidia_pkgs=$(rpm -qa | grep -E '^(akmods?-|akmods$|kmod-nvidia|xorg-x11-drv-nvidia|nvidia-container)' || true)
+        if [[ -n $nvidia_pkgs ]]; then
+            echo >&2 "Intel image contains NVIDIA driver-stack package(s): ${nvidia_pkgs//$'\n'/ }"
             exit 1
         fi
         [[ ! -e /usr/lib/modprobe.d/blacklist-nouveau.conf ]]
