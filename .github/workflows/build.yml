@@ -634,6 +634,10 @@ jobs:
               | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
             sudo udevadm control --reload-rules
             sudo udevadm trigger --name-match=kvm
+            # trigger returns before the rule is applied; without settle the
+            # test below raced it and warned "not writable" on a node that
+            # was already 0666 (publish run 41370982812, both legs).
+            sudo udevadm settle --timeout=30
             if [[ -r /dev/kvm && -w /dev/kvm ]]; then
               echo "KVM: /dev/kvm is usable ($(ls -l /dev/kvm))"
             else
