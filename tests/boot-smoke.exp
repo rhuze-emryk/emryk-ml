@@ -12,9 +12,12 @@ set variant [lindex $argv 3]
 set expected_source [lindex $argv 4]
 set guest_script [file join [file dirname [info script]] boot-smoke-guest.sh]
 set guest_payload [exec base64 -w0 $guest_script]
-# GitHub-hosted runners expose no /dev/kvm, so boot with QEMU software
-# emulation. Software emulation is far slower than KVM; the generous timeout
-# below (60 min) is the budget for the whole boot + guest checks.
+# accel=kvm:tcg — QEMU tries the accelerators in order: KVM when the runner
+# exposes a writable /dev/kvm (GitHub-hosted Linux runners have since 2024;
+# the workflow grants access), otherwise TCG software emulation. TCG is far
+# slower — F45 guest boots took 4-5 minutes of userspace and udev needed
+# ~45 s to surface /boot — so the 60-minute timeout is the TCG budget for
+# the whole boot + guest checks, not the expected KVM duration.
 set timeout 3600
 
 if {![info exists env(SERIAL_LOG)]} {
@@ -24,7 +27,7 @@ if {![info exists env(SERIAL_LOG)]} {
 log_file -a $env(SERIAL_LOG)
 
 spawn qemu-system-x86_64 \
-    -machine q35,accel=tcg \
+    -machine q35,accel=kvm:tcg \
     -cpu max \
     -smp 2 \
     -m 4096 \
@@ -37,8 +40,15 @@ spawn qemu-system-x86_64 \
     -netdev user,id=network0 \
     -device virtio-net-pci,netdev=network0
 
+# A boot that lands in the emergency or rescue shell never shows a login
+# prompt (2026-11-01 F45 intel leg: /boot device timeout under TCG, then an
+# hour of waiting for "login:"). Fail now; the serial log holds the reason.
 expect {
     -re {login:[[:space:]]*$} {}
+    -re {You are in (emergency|rescue) mode|Give root password for maintenance|Press Enter for maintenance} {
+        puts stderr "VM dropped into the emergency/rescue shell instead of presenting a login prompt"
+        exit 1
+    }
     timeout {
         puts stderr "timed out waiting for the serial login prompt"
         exit 124

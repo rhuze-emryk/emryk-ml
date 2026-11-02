@@ -543,9 +543,10 @@ jobs:
           if-no-files-found: error
 
   # Publishing paths boot both exact staged digests before the protected
-  # signing environment can be entered. GitHub-hosted runners expose no
-  # /dev/kvm, so the smoke VM boots under QEMU software emulation (slower
-  # boot, hence the generous timeout); missing OVMF or a failed boot is a
+  # signing environment can be entered. The smoke VM uses KVM (GitHub-hosted
+  # Linux runners expose /dev/kvm; the runtime step grants access) and falls
+  # back to QEMU software emulation if the device is missing — far slower,
+  # hence the generous timeout. Missing OVMF or a failed boot is a
   # release-gate failure. Gate restored 2026-08-29 after the 2026-08-21
   # multi-user.target race fix held across consecutive publishing runs.
   boot_smoke:
@@ -614,15 +615,33 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y expect ovmf qemu-system-x86
-          # GitHub-hosted runners have no /dev/kvm; boot-smoke.exp therefore
-          # boots with QEMU software emulation (accel=tcg, -cpu max). Keeping
-          # this gate on hosted runners avoids a self-hosted-runner dependency
-          # while still booting the exact staged digests.
           [[ -r /usr/share/OVMF/OVMF_CODE_4M.fd \
             && -r /usr/share/OVMF/OVMF_VARS_4M.fd ]] || {
             echo '::error::Required OVMF 4M firmware is unavailable.'
             exit 1
           }
+          # GitHub-hosted Linux runners have exposed /dev/kvm since 2024, but
+          # only root and the kvm group may open it; the runner user is in
+          # neither. Open it up the way GitHub's own Android-emulator guidance
+          # does, then re-trigger udev so the rule applies to the existing
+          # node. boot-smoke.exp uses `accel=kvm:tcg`, so a runner without
+          # KVM still boots under software emulation (2026-11-01 F45 intel
+          # leg: TCG udev took >45 s to surface /boot and hit systemd's 45 s
+          # device timeout; the smoke kernel args raise it to 300 s for that
+          # path). Absence is reported, not fatal.
+          if [[ -e /dev/kvm ]]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+            if [[ -r /dev/kvm && -w /dev/kvm ]]; then
+              echo "KVM: /dev/kvm is usable ($(ls -l /dev/kvm))"
+            else
+              echo "::warning::/dev/kvm exists but is not writable; the smoke VM will fall back to software emulation. $(ls -l /dev/kvm)"
+            fi
+          else
+            echo '::warning::No /dev/kvm on this runner; the smoke VM will boot under software emulation.'
+          fi
 
       - name: Record artifact owner
         id: owner
