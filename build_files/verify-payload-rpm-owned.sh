@@ -39,6 +39,7 @@ readonly ALLOWLIST_REGEX=(
   '^/usr/libexec/emryk/install-flatpaks\.sh$'
   '^/usr/libexec/emryk/update-nudge\.sh$'
   '^/usr/lib/modprobe\.d/blacklist-nouveau\.conf$'
+  '^/usr/lib/sysctl\.d/60-emryk-ptrace\.conf$'
 
   # rpm-ostree / bootc machinery: tmpfiles configs, rpm macros, prepare-root,
   # base-db snapshot. All generated/owned by the bootc layering system, not

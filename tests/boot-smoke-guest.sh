@@ -46,10 +46,16 @@ grep -Fq "$expected_image" "$work_dir/bootc-status.json"
 
 [[ $(getenforce) == Enforcing ]]
 
-# Restricted ptrace (F45 default, enforced by build.sh removing the override
-# package). Guard against a future dnf5 install pulling it back in via a
-# Recommends. Written as an if, not `! rpm -q`: set -e ignores `!` lines.
-[[ $(sysctl -n kernel.yama.ptrace_scope) == 1 ]]
+# Restricted ptrace (F45 default). build.sh removes the override package AND
+# ships /usr/lib/sysctl.d/60-emryk-ptrace.conf, because the base's prebuilt
+# initramfs still applies 0 before switch-root. Guard against a future dnf5
+# install pulling the package back in via a Recommends. Written as an if,
+# not `! rpm -q`: set -e ignores `!` lines.
+ptrace_scope=$(sysctl -n kernel.yama.ptrace_scope)
+if [[ $ptrace_scope != 1 ]]; then
+    echo >&2 "kernel.yama.ptrace_scope is ${ptrace_scope}, expected 1"
+    exit 1
+fi
 if rpm -q yama-ptrace-enable >/dev/null 2>&1; then
     echo >&2 'yama-ptrace-enable is installed; ptrace_scope would revert to 0 on the next boot'
     exit 1
