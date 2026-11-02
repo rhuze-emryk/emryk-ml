@@ -35,6 +35,9 @@ for _ in {1..90}; do
     sleep 2
 done
 systemctl is-active --quiet multi-user.target
+# Informational: "kvm" when the runner gave QEMU hardware acceleration,
+# "qemu" when it fell back to TCG software emulation.
+echo "virtualization: $(systemd-detect-virt || true)"
 
 bootc status --json > "$work_dir/bootc-status.json"
 jq -e --arg digest "$expected_digest" \

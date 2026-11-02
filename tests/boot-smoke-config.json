@@ -10,7 +10,7 @@
       }
     ],
     "kernel": {
-      "append": "console=ttyS0,115200n8 systemd.mask=emryk-install-flatpaks.service"
+      "append": "console=ttyS0,115200n8 systemd.mask=emryk-install-flatpaks.service systemd.default_device_timeout_sec=300"
     },
     "filesystem": [
       {
