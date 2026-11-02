@@ -70,6 +70,13 @@ selects the previous deployment while preserving state under `/var` and
   container-runtime vulnerabilities.
 - SELinux is configured for enforcing mode and asserted by the release VM.
   Administrators can still change runtime or persistent policy after install.
+- ptrace is restricted to child processes (`kernel.yama.ptrace_scope=1`, the
+  Fedora 45 default), on the host and inside containers. Attaching a debugger
+  or profiler to an already-running process (`gdb -p`, `strace -p`, py-spy,
+  IDE "attach") needs `sudo`; launching the program under the tool works as
+  before. To restore the old behaviour on one machine:
+  `sudo sysctl -w kernel.yama.ptrace_scope=0` (persist it in
+  `/etc/sysctl.d/`).
 - Firefox is installed from Flathub by an enabled network-dependent first-boot
   unit. Release VMs validate the unit but mask it for the smoke boot so an
   external Flathub outage cannot block publication.
