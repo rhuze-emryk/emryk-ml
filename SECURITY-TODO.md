@@ -4,6 +4,7 @@ This file contains only open risks. Binding security behavior and limitations
 are documented in [SECURITY.md](SECURITY.md); completed work and the original
 hardening diary are preserved in
 [docs/archive/security-hardening-history.md](docs/archive/security-hardening-history.md).
+Non-security engineering debt is tracked in [TECH-DEBT.md](TECH-DEBT.md).
 
 | Priority | Risk | State | Closing test |
 |---|---|---|---|
