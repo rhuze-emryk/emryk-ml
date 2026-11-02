@@ -135,7 +135,14 @@ install -m 0644 /ctx/selinux/config /etc/selinux/config
 # IDE "attach to process" need root (or CAP_SYS_PTRACE) for non-children,
 # on the host and inside containers sharing the kernel. Nothing else
 # depends on the package; the release VM asserts the scope at boot.
+#
+# Removing the package is necessary but not sufficient: the base's prebuilt
+# initramfs carries its own copy of the override, and the initrd applies 0
+# before switch-root. Ship a root-filesystem drop-in that re-applies 1 (see
+# the file's header for the full chain of events).
 dnf5 remove -y yama-ptrace-enable
+install -D -m 0644 /ctx/sysctl.d/60-emryk-ptrace.conf \
+    /usr/lib/sysctl.d/60-emryk-ptrace.conf
 
 # Assert wheel-requires-password rather than inherit it.
 # sudoers drop-ins are loaded alphabetically; the last matching rule wins,

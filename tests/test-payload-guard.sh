@@ -7,6 +7,7 @@ mock_rpm=${repo_root}/tests/fixtures/rpm-unowned.sh
 
 "$guard" --is-allowlisted /usr/libexec/emryk/install-flatpaks.sh
 "$guard" --is-allowlisted /usr/libexec/emryk/update-nudge.sh
+"$guard" --is-allowlisted /usr/lib/sysctl.d/60-emryk-ptrace.conf
 
 # ublue-os/main#3029 units are allowlisted by exact name only.
 "$guard" --is-allowlisted /usr/lib/systemd/system/bootc-update-ca-trust.service
