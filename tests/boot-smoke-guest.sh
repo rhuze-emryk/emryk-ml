@@ -46,6 +46,15 @@ grep -Fq "$expected_image" "$work_dir/bootc-status.json"
 
 [[ $(getenforce) == Enforcing ]]
 
+# Restricted ptrace (F45 default, enforced by build.sh removing the override
+# package). Guard against a future dnf5 install pulling it back in via a
+# Recommends. Written as an if, not `! rpm -q`: set -e ignores `!` lines.
+[[ $(sysctl -n kernel.yama.ptrace_scope) == 1 ]]
+if rpm -q yama-ptrace-enable >/dev/null 2>&1; then
+    echo >&2 'yama-ptrace-enable is installed; ptrace_scope would revert to 0 on the next boot'
+    exit 1
+fi
+
 sshd -t
 sshd -T -C user=ci-smoke,host=localhost,addr=127.0.0.1 \
     > "$work_dir/sshd-effective.txt"

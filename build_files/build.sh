@@ -125,6 +125,18 @@ install -m 0644 /ctx/kde/kwinrc /etc/xdg/kwinrc
 # diagnostic and file a security report.
 install -m 0644 /ctx/selinux/config /etc/selinux/config
 
+# Restrict ptrace to child processes (kernel.yama.ptrace_scope=1, the
+# kernel's own default). Fedora 45 made this the distribution default
+# ("Restrict ptrace by default") by no longer requiring the package that
+# ships the sysctl override back to 0 — but elfutils still Recommends it,
+# so the base image carries it and would ship the pre-F45 behaviour.
+# Removing it means an unprivileged process can no longer read or attach
+# to other processes of the same user: `gdb -p`, `strace -p`, py-spy and
+# IDE "attach to process" need root (or CAP_SYS_PTRACE) for non-children,
+# on the host and inside containers sharing the kernel. Nothing else
+# depends on the package; the release VM asserts the scope at boot.
+dnf5 remove -y yama-ptrace-enable
+
 # Assert wheel-requires-password rather than inherit it.
 # sudoers drop-ins are loaded alphabetically; the last matching rule wins,
 # so the 99- prefix guarantees this file overrides anything an upstream
