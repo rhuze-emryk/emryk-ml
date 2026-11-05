@@ -30,7 +30,7 @@ on:
 env:
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
   IMAGE_BASENAME: ${{ github.event.repository.name }}
-  BIB_IMAGE: quay.io/centos-bootc/bootc-image-builder:latest@sha256:b858892139e0779d48869a4dd8cbbc4e257da49f5a4b502824a55d221ed65a55
+  BIB_IMAGE: quay.io/centos-bootc/bootc-image-builder:latest@sha256:4d8a0d9d173a9f450ff42d70777e1e0a6681a68f5c0f5084b65222eceb1f4d05
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
