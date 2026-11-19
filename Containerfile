@@ -10,7 +10,7 @@ COPY cosign.pub /cosign.pub
 # the build pulls. A pin alone does not prove origin: build.yml checks
 # Universal Blue's cosign signature on each digest (upstream-keys/) first.
 # Bump tag and digest together when intentionally rolling forward.
-FROM ghcr.io/ublue-os/akmods-nvidia-open:main-45-7.3.3-300.fc45.x86_64@sha256:b5991753c55beb5cd49fd507fea20dab6d1bd7211b2808577a6a5843ebdb5b1b AS akmods
+FROM ghcr.io/ublue-os/akmods-nvidia-open:main-45-7.3.4-300.fc45.x86_64@sha256:448861f4ccdc7d262286b941b1c3846eb4f6e77e199e36bab92d4b3bb297cd42 AS akmods
 
 # kinoite-main tracks the Fedora major (:45), not :latest. Upstream moves
 # :latest to a new Fedora release a few weeks after it ships, and Renovate
