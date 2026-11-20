@@ -103,17 +103,29 @@ not a filesystem inventory.
 The NVIDIA akmods image tag embeds the kernel version for which its modules were
 built. Renovate can update a base digest without editing that readable tag.
 `Verify NVIDIA akmods kernel matches base kernel` deliberately fails if the
-Kinoite kernel and akmods tag differ.
+kernel in the pinned Kinoite base and the akmods tag differ.
 
-When that happens:
+The check reads the kernel from the pinned base, not from the built image:
+upstream's `nvidia-install.sh` downgrades the image's kernel to match the akmods
+tag, so the built NVIDIA image always agrees with the tag and cannot reveal a
+mismatch. Until 2026-11 the check compared against the built image and never
+fired.
 
-1. Read the built image's reported kernel version in the failed job.
+A Renovate base-digest PR that moves the kernel therefore stays red, and does
+not auto-merge, until the akmods pin moves with it. When that happens:
+
+1. Read `base image kernel` in the failed job, or the open
+   `Upstream kernel/NVIDIA` issue, which lists both pin lines once a matching
+   akmods image is published.
 2. Change the `akmods-nvidia-open:main-<major>-<kernel>` tag in `Containerfile` to
-   that exact version.
-3. Let Renovate update the new tag's digest, or independently resolve and review
-   the digest before committing it.
-4. Require the normal build, scan, and boot smoke gates. Do not infer physical
+   that exact version, with the digest read from the registry for the new tag.
+   Move the Kinoite digest in the same PR if `main` does not carry that kernel
+   yet.
+3. Require the normal build, scan, and boot smoke gates. Do not infer physical
    GPU success from module metadata alone.
+
+If the akmods image for the new kernel is not published yet, leave the base PR
+red and wait; `main` keeps building the last matching pair.
 
 ## Out-of-band security release
 
