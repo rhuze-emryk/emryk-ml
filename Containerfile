@@ -17,7 +17,7 @@ FROM ghcr.io/ublue-os/akmods-nvidia-open:main-45-7.3.4-300.fc45.x86_64@sha256:44
 # would deliver that as an auto-merged "digest" refresh. A Fedora major move
 # must be a deliberate PR that bumps this tag and the akmods -45- tag together;
 # upstream-release-watch.yml opens an issue when :latest moves past this pin.
-FROM ghcr.io/ublue-os/kinoite-main:45@sha256:4f1ddb1d902d47644272e1b9256af6b9e259315b788a9a043462a352fe1005d6 AS kinoite
+FROM ghcr.io/ublue-os/kinoite-main:45@sha256:8188356d4c6962487ddd5ae9f89fc932bc24e224435ed828c127c95fd1bc6ccc AS kinoite
 
 # ---------------------------------------------------------------------------
 # intel: laptop/iGPU variant (published as emryk-ml-intel). Same payload and
