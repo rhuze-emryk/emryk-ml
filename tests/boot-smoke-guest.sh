@@ -12,13 +12,22 @@ diagnose() {
         return
     fi
     echo "EMRYK_JOURNAL_BEGIN"
-    systemctl --failed --no-legend --plain || true
+    # Every command here needs --no-pager: this runs on the serial console, a
+    # TTY, so systemctl otherwise pipes through less, which waits at "(END)"
+    # for a keypress nobody sends. On 2026-11-21 that held the nvidia leg for
+    # 70 minutes and the journal below was never printed.
+    systemctl --failed --no-pager --no-legend --plain --full || true
+    # What is still queued or running: names the unit a stuck boot waits on.
+    systemctl list-jobs --no-pager --full || true
     journalctl -b --no-pager -n 1000 || true
     echo "EMRYK_JOURNAL_END"
     echo "EMRYK_SMOKE_FAILED:${exit_code}"
     exit "$exit_code"
 }
 trap diagnose EXIT
+# Second guard for the same hang: no systemd tool in this script may page,
+# including any added later without --no-pager.
+export SYSTEMD_PAGER=cat PAGER=cat
 # Name the failing check. Most assertions below are bare test expressions
 # that exit silently under set -e; without this the only evidence is the
 # journal dump (2026-11-01 F45 publish: an hour to find a grep).
